@@ -1,0 +1,2 @@
+this folder contains generated/needed object files
+Files missing are Genome fasta files due to size
