@@ -3026,19 +3026,19 @@ names(bam2bw_list)<- basename(bam2bw_list)
 ```{r}
 png(paste0("plots_png/Fig5D.png"), width=750, height=512)
 
-plotSignalTracks(files = list(IFS=bw_full[c(2,4)],CTRL =bw_full[c(1,3)],GR = bam2bw_list[1]),overlay.alpha = 85,region = "17:47261741-47262114",aggregation = "overlay",colors = c("orange","darkgrey","steelblue"),genomeAxis = T,ensdb = ensdb,extend = c(10000,10000),ylim= c(0,10), fontface.main = 1,cex.main = 1,cex.id=0.9,cex.title = 0.7) # , rotation.title = 0
+plotSignalTracks(files = list(IFS=bw_full[c(3,4)],CTRL =bw_full[c(1,2)],GR = bam2bw_list[1]),overlay.alpha = 85,region = "17:47261741-47262114",aggregation = "overlay",colors = c("orange","darkgrey","steelblue"),genomeAxis = T,ensdb = ensdb,extend = c(10000,10000),ylim= c(0,10), fontface.main = 1,cex.main = 1,cex.id=0.9,cex.title = 0.7) # , rotation.title = 0
 grid.text(paste0("Peak: 17:47261563-47262222","; ","Ubr2"), x = 0.28, y = 0.95, gp = gpar(fontsize = 14, fontface = "bold"))
 
 dev.off()
 
 pdf(paste0("plots_pdf/Fig5D.pdf"), width=8, height=7,colormodel = "cymk")
-plotSignalTracks(files = list(IFS=bw_full[c(2,4)],CTRL =bw_full[c(1,3)],GR = bam2bw_list[1]),overlay.alpha = 85,region = "17:47261741-47262114",aggregation = "overlay",colors = c("orange","darkgrey","steelblue"),genomeAxis = T,ensdb = ensdb,extend = c(10000,10000),ylim= c(0,10), fontface.main = 1,cex.main = 1,cex.id=0.9,cex.title = 0.7) # , rotation.title = 0
+plotSignalTracks(files = list(IFS=bw_full[c(3,4)],CTRL =bw_full[c(1,2)],GR = bam2bw_list[1]),overlay.alpha = 85,region = "17:47261741-47262114",aggregation = "overlay",colors = c("orange","darkgrey","steelblue"),genomeAxis = T,ensdb = ensdb,extend = c(10000,10000),ylim= c(0,10), fontface.main = 1,cex.main = 1,cex.id=0.9,cex.title = 0.7) # , rotation.title = 0
 grid.text(paste0("Peak: 17:47261563-47262222","; ","Ubr2"), x = 0.28, y = 0.95, gp = gpar(fontsize = 14, fontface = "bold"))
 dev.off()
 
 
 svg(paste0("plots_svg/Fig5D.svg"), width=8, height=7)
-plotSignalTracks(files = list(IFS=bw_full[c(2,4)],CTRL =bw_full[c(1,3)],GR = bam2bw_list[1]),overlay.alpha = 85,region = "17:47261741-47262114",aggregation = "overlay",colors = c("orange","darkgrey","steelblue"),genomeAxis = T,ensdb = ensdb,extend = c(10000,10000),ylim= c(0,10), fontface.main = 1,cex.main = 1,cex.id=0.9,cex.title = 0.7) # , rotation.title = 0
+plotSignalTracks(files = list(IFS=bw_full[c(3,4)],CTRL =bw_full[c(1,2)],GR = bam2bw_list[1]),overlay.alpha = 85,region = "17:47261741-47262114",aggregation = "overlay",colors = c("orange","darkgrey","steelblue"),genomeAxis = T,ensdb = ensdb,extend = c(10000,10000),ylim= c(0,10), fontface.main = 1,cex.main = 1,cex.id=0.9,cex.title = 0.7) # , rotation.title = 0
 grid.text(paste0("Peak: 17:47261563-47262222","; ","Ubr2"), x = 0.28, y = 0.95, gp = gpar(fontsize = 14, fontface = "bold"))
 dev.off()
 
