@@ -1,0 +1,4577 @@
+---
+title: "Paper-plots"
+author: "Miriam Kretschmer & Vincent Fischer"
+date: "28/02/2025"
+output:
+  bookdown::html_document2:
+    code_folding: hide
+bibliography: citations.bib
+link-citations: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(error = TRUE)
+knitr::opts_knit$set(root.dir = normalizePath("/mnt/gapp/work/vincent/paper/Kretschmer2025/GitHub_submission2"))
+```
+
+```{r}
+suppressPackageStartupMessages({
+library(AnnotationHub)
+library(rtracklayer)
+library(universalmotif)
+library(MotifDb)
+library(Rsamtools)
+library(memes)
+library(rGREAT)
+library(MotifDb)
+library(ggplot2)
+library(ggpubr)
+library(ggrepel)
+library(SummarizedExperiment)
+library(SEtools)
+library(sechm)
+library(fgsea)
+library(msigdbr)
+library(RColorBrewer)
+library(ggvenn)
+library(viridis)
+library(cowplot)
+library(epiwraps)
+  library(chromVAR)
+  library(edgeR)
+  library(limma)
+  library(org.Hs.eg.db)
+  library(org.Mm.eg.db)
+  library(clusterProfiler)
+  })
+set.seed(123)
+ah <- AnnotationHub()
+source("objects/BFA_BFF.R")
+source("objects/DLCAnalyzer.R")
+```
+
+
+```{r, eval = T}
+# function to get non redundant motifs from MotifDB
+getNonRedundantMotifs <- function(){
+  motifs <- MotifDb::query(MotifDb::MotifDb, c("Mmusculus","HOCOMOCO"))
+  modf <- data.frame(row.names=names(motifs),
+                     TF=gsub("^Mmusculus-HOCOMOCOv10-|_MOUSE.+","",names(motifs)),
+                     grade=gsub(".+\\.","",names(motifs)))
+  modf <- modf[order(modf$TF,modf$grade),]
+  modf <- modf[!duplicated(modf$TF),]
+  setNames(universalmotif::convert_motifs(motifs[row.names(modf)]), modf$TF)
+}
+motifs <- getNonRedundantMotifs()
+motifs$GCR
+```
+
+
+# Fig 1A - Motif enrichment sperm and oocyte
+
+Sperm peaks
+```{r}
+d.sperm <- readRDS("objects/motif_enrichment_sperm_consensus_narrow.rds")
+d.sperm <- readRDS("objects/motif_enrichment_sperm_consensus_broad.rds")
+
+head(d.sperm)
+length(d.sperm$motif_id)#281
+```
+
+MII oocyte peaks
+```{r}
+d.oo <- readRDS("objects/motif_enrichment_oocyte_broad.rds")
+
+head(d.oo)
+length(d.oo$motif_id)
+d.oo$motif_id
+```
+
+Comparing the enrichments directly, e.g. by merging two data.frames and plotting the log(p) in one vs the other highlighting top 5 for each 
+```{r}
+m <- merge(d.oo, d.sperm, by="motif_id", suffixes=c(".oocyte",".sperm"))
+
+m.oo.sort <- m[order(m[,2],decreasing = FALSE),]
+m.oo5 <- m.oo.sort[1:3,]
+m.sperm.sort <- m[order(m[,18],decreasing = FALSE),]
+m.sperm5 <- m.sperm.sort[1:3,]
+m
+```
+
+```{r}
+ggplot(m, aes(x=log2((1+tp.sperm)/(1+fp.sperm)), y= log2((1+tp.oocyte)/(1+fp.oocyte)), size=(tp_percent.sperm))) + 
+  geom_point() + 
+  geom_text_repel(box.padding=0.5, min.segment.length = 0, max.overlaps = 10, hjust = "left", aes(label=motif_id), data=m.oo5, size=4) + 
+  geom_text_repel(box.padding= 0.5, min.segment.length = 0, max.overlaps = 10, hjust = "right", aes(label=motif_id), data=m.sperm5)+
+  geom_point(color="orange", data=m.oo5) +
+  geom_point(color="blue", data=m.sperm5) +
+  labs(color="Top enriched motifs")+
+  labs(x="log2(fold-enrichment in spermatozoa)", y="log2(fold-enrichment in MII oocytes)", size="% of set") +
+  #ylab("-log10 (adjusted p-value MII oocyte)")+
+  #xlab("-log10 (adjusted p-value spermatozoa)")+
+  theme_classic() +
+  #theme(legend.position = "none")+
+  ggtitle("Top ranked motifs in peaks of spermatozoa vs. MII oocytes")
+
+  ggsave("./plots_svg/motif_enrichment_sperm_vs_oocyte_peaks.svg")
+ggsave("./plots_pdf/motif_enrichment_sperm_vs_oocyte_peaks.pdf")#, width = 6, height = 4)
+ggsave("./plots_png/motif_enrichment_sperm_vs_oocyte_peaks.png")
+```
+
+
+# Fig 1B - TF motif activity sperm vs oocyte
+
+```{r}
+library(TFBSTools)
+sc <- readRDS("./objects/sc_sperm_oo.rds")
+fa <- Rsamtools::FaFile("objects/Mus_musculus.GRCm39.dna_sm.primary_assembly.fa")
+
+sc_gc <- addGCBias(sc, genome=fa)
+motifs <- do.call(what = "PFMatrixList", lapply(getNonRedundantMotifs(), class="TFBSTools-PFMatrix", FUN= convert_motifs))
+#motifs <- getNonRedundantMotifs()
+motif_ix <- motifmatchr::matchMotifs(motifs, sc_gc, genome=fa)
+motif_ix
+dev <- computeDeviations(object=sc_gc, annotations=motif_ix)
+dev$groups <- c("sperm","sperm","MIIoocyte")
+
+fit <- lmFit(assays(dev)$z, model.matrix(~dev$groups),background_peaks = getBackgroundPeaks(sc_gc,rowData(sc_gc)$bias,niterations = 5000))
+
+head(mores <- topTable(eBayes(fit),number=Inf),395)
+sechm::sechm(dev, head(row.names(mores)), assayName = "z", top_annotation = "groups",do.scale=TRUE)
+sechm::sechm(dev, head(row.names(mores),395), assayName = "z", top_annotation = "groups",do.scale = TRUE)
+```
+
+```{r}
+ggplot(mores, aes(logFC, -log10(adj.P.Val))) + 
+  geom_point() + 
+  geom_hline(yintercept=-log10(0.05), linetype="dashed") +
+  ggtitle("Transcription factor motif activity spermatozoa vs MIIoocyte") +
+  theme_classic() +
+  labs(y = "-log10(adjusted p-value)") +
+  geom_text_repel(data = subset(mores, adj.P.Val < 0.01), 
+                  aes(label = rownames(subset(mores, adj.P.Val < 0.01))), 
+                  min.segment.length = 0,
+                  size = 4)
+#geom_point(aes(color = B)) +
+
+ggsave("./plots_svg/TFmotif_activity_sperm_vs_oocyte_peaks.svg")
+ggsave("./plots_pdf/TFmotif_activity_sperm_vs_oocyte_peaks.pdf")#, width = 6, height = 4)
+ggsave("./plots_png/TFmotif_activity_sperm_vs_oocyte_peaks.png")
+```
+
+
+
+
+# Fig 1C - Human sperm 
+
+```{r}
+genome <- ah[["AH90808"]] #human 
+
+GRE_motif <- MotifDb::MotifDb %>% 
+  MotifDb::query("GRE") %>% 
+  universalmotif::convert_motifs() %>% 
+  .[[1]]
+```
+
+```{r GRE-peaks-hcp}
+peaks <- import("extern_data/ATAC_Corces_1_peaks.narrowPeak")
+peak_seqs <- get_sequence(peaks, genome)
+fimo <- runFimo(peak_seqs, GRE_motif, meme_path = "/common/meme/bin") # you need to insert your indiviudual meme path here
+GRE_peaks1 <- peaks[overlapsAny(peaks, fimo)]
+```
+```{r number-peaks-hcp, results='hide'}
+length(peaks) #32027
+length(fimo) #1338
+sum(overlapsAny(peaks, fimo)) #716
+length(GRE_peaks1) #716
+```
+
+```{r, eval=T}
+tracks <- c(
+  sperm1="extern_data/ATAC_Corces_1.full.bw",
+  sperm2="extern_data/ATAC_Corces_2.full.bw"
+)
+
+m <- signal2Matrix(tracks, GRE_peaks1, w = 20, BPPARAM = 4)
+m <- epiwraps:::.ese2ml(m)
+
+fused_sperm_mat <- mergeSignalMatrices(m[1:2])
+fused_sperm_mat
+
+fused_m <- c(list("Human sperm"=fused_sperm_mat), m[-1:-2])
+
+
+pdf("plots_pdf/humansperm.pdf", width=7.5, height=10)
+h <- plotEnrichedHeatmaps(fused_m, row_title="Peaks from spermatozoa with GRE", raster_resize_mat = TRUE, axis_name = c("-2kb","0","+2kb"), colors = rocket(2000), mean_trim = TRUE, mean_color = "#800080", heatmap_legend_param = list(legend_direction = "horizontal", legend_width = unit(0.28, "npc"), title=NULL), use_raster = TRUE)
+print(h)
+dev.off()
+
+png("plots_png/humansperm.png")
+h <- plotEnrichedHeatmaps(fused_m, row_title="Peaks from spermatozoa with GRE", raster_resize_mat = TRUE, axis_name = c("-2kb","0","+2kb"), colors = rocket(2000), mean_color = "#800080", heatmap_legend_param = list(legend_direction = "horizontal", legend_width = unit(0.28, "npc"), title=NULL), use_raster = TRUE)
+print(h)
+dev.off()
+
+svg("plots_svg/humansperm.svg", width=7.5, height=10)
+h <- plotEnrichedHeatmaps(fused_m, row_title="Peaks from spermatozoa with GRE", raster_resize_mat = TRUE, axis_name = c("-2kb","0","+2kb"), colors = rocket(2000), mean_color = "#800080",heatmap_legend_param = list(legend_direction = "horizontal", legend_width = unit(0.28, "npc"), title=NULL), use_raster = TRUE)
+print(h)
+dev.off()
+```
+
+
+# Fig 1D - Sperm GRE peaks across spermatogenesis
+
+```{r}
+tracks <- c(
+  uds1="extern_data/ATACse_PRJNA399533_Thy1posSpermatogonia_GSM2751121.bw",
+  uds2="extern_data/ATACse_PRJNA399533_Thy1posSpermatogonia_GSM2751122.bw",
+  ds1="extern_data/ATACse_PRJNA399533_cKitposSpermatogonia_GSM2751125.bw",
+  ds2="extern_data/ATACse_PRJNA399533_cKitposSpermatogonia_GSM2751126.bw",
+  ps1="extern_data/ATACse_PRJNA399533_PachytenSpermatocytes_GSM2751129.bw",
+  ps2="extern_data/ATACse_PRJNA399533_PachytenSpermatocytes_GSM2751130.bw",
+  rs1="extern_data/ATACse_PRJNA399533_RoundSpermatides_GSM2751133.bw",
+  rs2="extern_data/ATACse_PRJNA399533_RoundSpermatides_GSM2751134.bw",
+  sperm1="extern_data/ATAC_PRJNA480448_Sperm_GSM3262855.bw",
+  sperm2="extern_data/ATAC_PRJNA480448_Sperm_GSM3262856.bw",
+  sperm3="extern_data/ATAC_PRJNA315208_Sperm_GSM2088377.bw",
+  sperm4="extern_data/ATAC_PRJNA315208_Sperm_GSM2088378.bw",
+  GVoocyte1="extern_data/ATAC_PRJNA480448_GVOocyte_GSM3262861.bw",
+  GVoocyte2="extern_data/ATAC_PRJNA480448_GVOocyte_GSM3262862.bw",
+  "MII oocyte"="extern_data/ATAC_PRJNA480448_MIIOocyte_GSM3262863.bw"
+)
+```
+
+# create symbolic links
+
+```{r}
+peaks <- readRDS("objects/narrow_peaks_with_GRE_sperm.rds")
+m <- signal2Matrix(tracks, peaks, w = 20, BPPARAM = 2)
+m <- epiwraps:::.ese2ml(m)
+
+fused_uds_mat <- mergeSignalMatrices(m[1:2])
+fused_ds_mat <- mergeSignalMatrices(m[3:4])
+fused_ps_mat <- mergeSignalMatrices(m[5:6])
+fused_rs_mat <- mergeSignalMatrices(m[7:8])
+fused_sperm_mat <- mergeSignalMatrices(m[9:12])
+fused_gv_mat <- mergeSignalMatrices(m[13:14])
+
+fused_m <- c(list(fused_uds=fused_uds_mat), list(fused_ds=fused_ds_mat), list(fused_ps=fused_ps_mat), list(fused_rs=fused_rs_mat), list(fused_sperm=fused_sperm_mat), list(fused_GVoocytes=fused_gv_mat), m[15], m[-1:-15])
+fused_n <- renormalizeBorders(lapply(fused_m,log1p))
+
+#fused_m <- readRDS("rds_saves/paper/spermatogenesis_fused_m.rds")
+#fused_n <- readRDS("rds_saves/paper/spermatogenesis_fused_n.rds")
+```
+
+Combined in one plot
+```{r}
+pdf("plots_pdf/GREpeaks_from_sperm_across_spermatogenesis_normalized.pdf", width=17.5, height=10)
+h <- plotEnrichedHeatmaps(fused_n, row_title="Peaks from spermatozoa with GRE", raster_resize_mat = TRUE, axis_name = c("-2kb","0","+2kb"), colors = rocket(2000), mean_color = "#800080")
+print(h)
+dev.off()
+
+png("plots_png/GREpeaks_from_sperm_across_spermatogenesis_normalized.png", height=768)
+h <- plotEnrichedHeatmaps(fused_n, row_title="Peaks from spermatozoa with GRE", raster_resize_mat = TRUE, axis_name = c("-2kb","0","+2kb"), colors = rocket(2000), mean_color = "#800080")
+print(h)
+dev.off()
+```
+
+Single panels of heatmaps 
+```{r}
+# Create a list of heatmaps
+for (i in 1:length(fused_n)) {
+  h <- plotEnrichedHeatmaps(fused_n[i], raster_resize_mat = TRUE, axis_name = c("-2kb","0","+2kb"), colors = rocket(2000), mean_color = "#800080",
+                            heatmap_legend_param = list(legend_direction = "horizontal", legend_width = unit(0.28, "npc"), title=NULL))
+  
+  # Save each heatmap to a PDF
+  pdf(paste0("plots_pdf/GREpeaks_from_sperm_across_spermatogenesis_normalized_", i, ".pdf"), width=2.5, height=10)
+  draw(h, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+}
+```
+
+```{r}
+# Create a list of heatmaps
+for (i in 1:length(fused_n)) {
+  h <- plotEnrichedHeatmaps(fused_n[i], raster_resize_mat = TRUE, axis_name = c("-2kb","0","+2kb"), colors = rocket(2000), mean_color = "#800080",
+                            heatmap_legend_param = list(legend_direction = "horizontal", legend_width = unit(0.4, "npc"), title=NULL))
+
+  # Save each heatmap to a PNG
+  png(paste0("plots_png/GREpeaks_from_sperm_across_spermatogenesis_normalized_", i, ".png"), width=250, height=768)
+  draw(h, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+}
+```
+
+
+
+# Fig 1E - Promotors with GRE; ATAC, H3k4m3 and 5mC
+
+
+```{r}
+tracks <- c(
+  sperm1="extern_data/ATAC_PRJNA480448_Sperm_GSM3262855.bw",
+  sperm2="extern_data/ATAC_PRJNA480448_Sperm_GSM3262856.bw",
+  sperm3="extern_data/ATAC_PRJNA315208_Sperm_GSM2088377.bw",
+  sperm4="extern_data/ATAC_PRJNA315208_Sperm_GSM2088378.bw",
+  sperm1_H3K4me3="extern_data/SRR3309386.bw",
+  sperm2_H3K4me3="extern_data/SRR3309387.bw",
+  sperm3_H3K4me3="extern_data/SRR3703039.bw",
+  sperm4_H3K4me3="extern_data/SRR5049005.bw",
+  sperm5_H3K4me3="extern_data/SRR3225849.bw",
+  sperm1_H3K27ac="extern_data/SRR3225845.bw",
+  sperm2_H3K27ac="extern_data/SRR5049001.bw",
+  sperm1_H3K9ac="extern_data/SRR3225847.bw",
+  sperm2_H3K9ac="extern_data/SRR5049003.bw",
+  sperm1_H3K4me1="extern_data/SRR3225848.bw",
+  sperm2_H3K4me1="extern_data/SRR5049004.bw",
+  sperm1_H3.3="extern_data/ChIP_PRJNA480447_Sperm_GSM3262880.bw",  
+  sperm2_H3.3="extern_data/ChIP_PRJNA480447_Sperm_GSM3262881.bw",
+  sperm1_H2A.Z="extern_data/ChIP_PRJNA480447_Sperm_GSM3262882.bw",
+  sperm2_H2A.Z="extern_data/ChIP_PRJNA480447_Sperm_GSM3262880.bw"
+)
+
+```
+
+
+
+
+
+
+```{r}
+methyl_bw <- list.files(path = "intern_data/Nanopore/",pattern = "39.bw",full.names = T)
+names(methyl_bw) <- c("GR_Ctrl1","GR_Ctrl2","GR_KO1","GR_KO2")
+
+methyl_bw_ctrl <- methyl_bw[1:2]
+
+```
+```{r}
+methyl_bed <- sapply(names(methyl_bw),function(names){
+  import.bw(methyl_bw[names])
+  
+  })
+```
+
+
+promoters regions with GRE 
+```{r}
+proms <- readRDS("objects/GRE_promoters_center.rds")
+
+```
+
+```{r}
+sm2 <- signal2Matrix(w = 20L, filepaths = tracks[c(1:4,5:9)],regions = proms)
+#plotEnrichedHeatmaps(sm2)
+```
+
+
+```{r}
+sm_5mC <- signal2Matrix(w = 20L , smooth = T, limit = c(0,100), filepaths = methyl_bed, regions = proms)
+sm2 <- sm2[rownames(sm2) %in% rownames(sm_5mC),]
+```
+
+
+
+
+```{r}
+sm_merge <- mergeSignalMatrices(epiwraps:::.ese2ml(sm2)[1:4])
+sm_merge_H3K4me3 <- mergeSignalMatrices(epiwraps:::.ese2ml(sm2)[5:9])
+sm_merge_5mC <- mergeSignalMatrices(epiwraps:::.ese2ml(sm_5mC)[1:2])
+```
+
+```{r}
+p <- plotEnrichedHeatmaps(ml = list(ATAC = sm_merge,H3K4me3 = sm_merge_H3K4me3),multiScale = F,row_title = "Promoters with GRE",color = rocket(2000),scale_title = "density",axis_name = c("-2kb","TSS","+2kb"), use_raster = T,mean_scale_side = "none",  heatmap_legend_param = list(legend_direction = "horizontal", legend_width = unit(0.4,"npc"), title=NULL))+
+                       plotEnrichedHeatmaps(ml = list("5mC" = sm_merge_5mC),row_title = "Promoters with GRE",use_raster =TRUE, scale_title = "5mc[%]",axis_name = c("-2kb","TSS","+2kb"),mean_scale_side = "none",  heatmap_legend_param = list(legend_direction = "horizontal", legend_width = unit(0.4,"npc"), title=NULL))
+# p
+ #draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+ 
+ #draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+
+  png(paste0("plots_png/Fig1E.png"), width=750, height=768)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+  
+  pdf(paste0("plots_pdf/Fig1E.pdf"), width=7.5, height=10)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+  
+  svg(paste0("plots_svg/Fig1E.svg"), width=7.5, height=10)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+```
+each heatmap on its own
+```{r}
+#ATAC
+p <- plotEnrichedHeatmaps(ml = list(ATAC = sm_merge),multiScale = F,row_title = "Promoters with GRE",color = rocket(2000),scale_title = "density",axis_name = c("-2kb","TSS","+2kb"), use_raster = T,  heatmap_legend_param = list(legend_direction = "horizontal", legend_width = unit(0.4,"npc"), title=NULL))
+png(paste0("plots_png//Fig1EATAC.png"), width=250, height=768)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+  
+  pdf(paste0("plots_pdf//Fig1EATAC.pdf"), width=2.5, height=10)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+  
+  svg(paste0("plots_svg//Fig1EATAC.svg"), width=2.5, height=10)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+# H3K4m3 
+  p <- plotEnrichedHeatmaps(ml = list(H3K4me3 = sm_merge_H3K4me3),multiScale = F,row_title = "Promoters with GRE",color = rocket(2000),scale_title = "density",axis_name = c("-2kb","TSS","+2kb"), use_raster = T,  heatmap_legend_param = list(legend_direction = "horizontal", legend_width = unit(0.4,"npc"), title=NULL))
+png(paste0("plots_png//Fig1EH3K4me3.png"), width=250, height=768)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+  
+  pdf(paste0("plots_pdf//Fig1EH3K4me3.pdf"), width=2.5, height=10)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+  
+  svg(paste0("plots_svg/Fig1EH3K4me3.svg"), width=2.5, height=10)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+  
+# 5mC
+  
+p <-   plotEnrichedHeatmaps(ml = list("5mC" = sm_merge_5mC),row_title = "Promoters with GRE",use_raster =TRUE, scale_title = "5mc[%]",axis_name = c("-2kb","TSS","+2kb"),  heatmap_legend_param = list(legend_direction = "horizontal", legend_width = unit(0.4,"npc"), title=NULL))
+png(paste0("plots_png/Fig1EH3K4me3.png"), width=250, height=768)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+  
+  pdf(paste0("plots_pdf/Fig1EH3K4me3.pdf"), width=2.5, height=10)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+  
+  svg(paste0("plots_svg/Fig1EH3K4me3.svg"), width=2.5, height=10)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+  
+```
+
+
+# Fig 1F GR-ChIP
+```{r}
+bw_ChIP <- list.files("intern_data/ChIP/",pattern = "*subtract",full.names = T)
+names(bw_ChIP)<- gsub(x = basename(bw_ChIP),pattern = ".subtract.bw",replacement = "")
+bw_GR <- bw_ChIP[1]
+names(bw_GR) <- "GR"
+GR_ap_broad <- import("intern_data/ChIP/VF_sp_GR_ap_EKDL220011603-1A_H5J3HDSX5_L2_peaks.broadPeak",format = "broadPeak")
+```
+
+```{r}
+bed_GR <- import.bw(bw_GR) 
+sm_GR <-  signal2Matrix(filepaths = list(GR = bed_GR),regions = GR_ap_broad,w = 10L,smooth = T, background= 0) 
+```
+
+
+```{r,fig.width=7,fig.height=9}
+
+p_GR1 <-  plotEnrichedHeatmaps(sm_GR,row_title = "GR-ChIP sites",scale_title = "GR\ndesnity",colors = mako(2000), raster_resize_mat = TRUE, use_raster = TRUE,axis_name = c("-2kb","0","+2kb"), trim = c(0.01,0.99),width = unit(0.8,"npc"), heatmap_legend_param = list(legend_direction = "horizontal", legend_width = unit(0.4,"npc"), title=NULL))
+
+
+#p_GR1
+
+#p_GR2 <-  plotEnrichedHeatmaps(sn_GR,row_title = "GR-ChIP sites",scale_title = "GR\ndesnity",colors = c("black","steelblue1"),mean_scale_side = "none", raster_resize_mat = TRUE, axis_name = c("-2kb","0","+2kb"),trim = c(0.005,0.995), heatmap_legend_param = list(legend_direction = "horizontal", legend_width = unit(0.28, "npc"), title=NULL))
+
+#p_GR2
+  draw(p_GR1, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+
+  png(paste0("plots_png/Fig1F.png"), width=250, height=768)
+  draw(p_GR1, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+  
+  pdf(paste0("plots_pdf/Fig1F.pdf"), width=2.5, height=10)
+  draw(p_GR1, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+  
+  svg(paste0("plots_svg/Fig1F.svg"), width=2.5, height=10)
+  draw(p_GR1, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+```
+
+
+# Fig 1G Promoter with GRE GR,ATAC,H3K4m3,H3k27ac
+```{r}
+tracks <- c(
+  
+  sperm1_H3K4me3="extern_data/SRR3309386.bw",
+  sperm2_H3K4me3="extern_data/SRR3309387.bw",
+  sperm3_H3K4me3="extern_data/SRR3703039.bw",
+  sperm4_H3K4me3="extern_data/SRR5049005.bw",
+  sperm5_H3K4me3="extern_data/SRR3225849.bw",
+  sperm1_H3K27ac="extern_data/SRR3225845.bw",
+  sperm2_H3K27ac="extern_data/SRR5049001.bw",
+  sperm1="extern_data/ATAC_PRJNA480448_Sperm_GSM3262855.bw",
+  sperm2="extern_data/ATAC_PRJNA480448_Sperm_GSM3262856.bw",
+  sperm3="extern_data/ATAC_PRJNA315208_Sperm_GSM2088377.bw",
+  sperm4="extern_data/ATAC_PRJNA315208_Sperm_GSM2088378.bw",
+  sperm1_GR = "intern_data/ChIP/VF_sp_GR_ap.subtract.bw"
+)
+
+
+proms <- readRDS("objects/GRE_promoters_center.rds")
+set.seed(1234)
+#proms <- sample(proms,10000)
+
+m <- signal2Matrix(tracks, proms, w = 20, BPPARAM = 8)
+m <- epiwraps:::.ese2ml(m)
+
+
+
+fused_H3K4me3 <- mergeSignalMatrices(m[1:5])
+fused_H3K27ac <- mergeSignalMatrices(m[6:7])
+fused_ATAC <- mergeSignalMatrices(m[8:11])
+
+
+fused_m <- c(list(GR =m[[12]]),list(H3K27ac=fused_H3K27ac), list(H3K4me3=fused_H3K4me3),list(ATAC=fused_ATAC))
+fused_n <- renormalizeBorders(lapply(fused_m,log1p))
+
+
+bg_nf <- getNormFactors(tracks,method = "background")
+
+
+bg <- epiwraps::renormalizeSignalMatrices(ml = m ,scaleFactors = bg_nf)
+
+
+
+fused_H3K4me3_bg <- mergeSignalMatrices(bg[1:5])
+fused_H3K27ac_bg <- mergeSignalMatrices(bg[6:7])
+fused_ATAC_bg <- mergeSignalMatrices(bg[8:11])
+fused_bg <- c(list(GR =bg[[12]]),list(H3K27ac=fused_H3K27ac_bg), list(H3K4me3=fused_H3K4me3_bg), list(ATAC = fused_ATAC_bg))
+ 
+
+```
+
+```{r}
+sperm1_GR <- "intern_data/ChIP/VF_sp_GR_ap.subtract.bw"
+```
+
+```{r}
+sperm1_GR_bed <- import.bw(sperm1_GR)
+sm_gr_smooth <- signal2Matrix(filepaths = list(GR = sperm1_GR_bed),regions = proms,w = 20L,smooth  = T,background = 0)
+```
+
+
+```{r}
+plotEnrichedHeatmaps(sm_gr_smooth,row_title = "Promoter with GRE",scale_title = "GR\ndesnity",colors = mako(2000),mean_scale_side = "none", trim = c(0.02,0.98),
+                            heatmap_legend_param = list(legend_direction = "horizontal", legend_width = unit(0.28, "npc"), title=NULL))+
+plotEnrichedHeatmaps(fused_bg[2:4],row_title = "Promoter with GRE",scale_title = "HPTM\ndensity",colors = rocket(2000),mean_scale_side = "none",
+                            heatmap_legend_param = list(legend_direction = "horizontal", legend_width = unit(0.28, "npc"), title=NULL),scale_rows = FALSE)
+
+```
+
+```{r}
+p <- plotEnrichedHeatmaps(sm_gr_smooth,row_title = "Promoter with GRE",scale_title = "GR\ndesnity",colors = mako(2000),mean_scale_side = "none", trim = c(0.02,0.98),axis_name = c("-2kb","TSS","+2kb"),
+                            heatmap_legend_param = list(legend_direction = "horizontal", legend_width = unit(0.28, "npc"), title=NULL))+
+plotEnrichedHeatmaps(fused_bg[c(4,3,2)],row_title = "Promoter with GRE",scale_title = "HPTM\ndensity",colors = rocket(2000),mean_scale_side = "none",axis_name = c("-2kb","TSS","+2kb"),
+                            heatmap_legend_param = list(legend_direction = "horizontal", legend_width = unit(0.28, "npc"), title=NULL),scale_rows = FALSE)
+
+ro <- p@ht_list[[1]]@row_order
+# p
+ #draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+ 
+ #draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+
+  png(paste0("plots_png//Fig1G.png"), width=1000, height=768)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+  
+  pdf(paste0("plots_pdf//Fig1G.pdf"), width=10, height=10)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+  
+  svg(paste0("plots_svg//Fig1G.svg"), width=10, height=10)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+```
+each heatmap on its own
+```{r}
+#GR
+p <- plotEnrichedHeatmaps(sm_gr_smooth,row_title = "Promoter with GRE",scale_title = "GR\ndesnity",colors = mako(2000), trim = c(0.02,0.98),axis_name = c("-2kb","TSS","+2kb"),row_order = ro,
+                            heatmap_legend_param = list(legend_direction = "horizontal", legend_width = unit(0.28, "npc"), title=NULL))
+png(paste0("plots_png//Fig1G_GR.png"), width=250, height=768)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+  
+  pdf(paste0("plots_pdf//Fig1G_GR.pdf"), width=2.5, height=10)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+  
+  svg(paste0("plots_svg//Fig1G_GR.svg"), width=2.5, height=10)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+# ATAC 
+  p <-plotEnrichedHeatmaps(fused_bg[c(4)],row_title = "Promoter with GRE",scale_title = "HPTM\ndensity",colors = rocket(2000),axis_name = c("-2kb","TSS","+2kb"),row_order = ro,
+                            heatmap_legend_param = list(legend_direction = "horizontal", legend_width = unit(0.28, "npc"), title=NULL),scale_rows = FALSE)
+png(paste0("plots_png//Fig1G_ATAC.png"), width=250, height=768)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+  
+  pdf(paste0("plots_pdf//Fig1G_ATAC.pdf"), width=2.5, height=10)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+  
+  svg(paste0("plots_svg//Fig1G_ATAC.svg"), width=2.5, height=10)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+  
+# H3K4me3
+  
+p <-  plotEnrichedHeatmaps(fused_bg[c(3)],row_title = "Promoter with GRE",scale_title = "HPTM\ndensity",colors = rocket(2000),axis_name = c("-2kb","TSS","+2kb"),row_order = ro,
+                            heatmap_legend_param = list(legend_direction = "horizontal", legend_width = unit(0.28, "npc"), title=NULL),scale_rows = FALSE)
+png(paste0("plots_png//Fig1G_H3K4me3.png"), width=250, height=768)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+  
+  pdf(paste0("plots_pdf//Fig1G_H3K4me3.pdf"), width=2.5, height=10)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+  
+  svg(paste0("plots_svg//Fig1G_H3K4me3.svg"), width=2.5, height=10)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+  
+  
+# H3K27ac
+  
+p <-  plotEnrichedHeatmaps(fused_bg[c(2)],row_title = "Promoter with GRE",scale_title = "HPTM\ndensity",colors = rocket(2000),axis_name = c("-2kb","TSS","+2kb"),row_order = ro,
+                            heatmap_legend_param = list(legend_direction = "horizontal", legend_width = unit(0.28, "npc"), title=NULL),scale_rows = FALSE)
+png(paste0("plots_png/Fig1G_H3K27ac.png"), width=250, height=768)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+  
+  pdf(paste0("plots_pdf/Fig1G_H3K27ac.pdf"), width=2.5, height=10)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+  
+  svg(paste0("plots_svg/Fig1G_H3K27ac.svg"), width=2.5, height=10)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")  
+  dev.off()
+  
+```
+
+
+
+#Fig S1A - Comparison sperm data of published data and of Fischer and Kretschmer 2023
+
+```{r}
+peaks <- readRDS("objects/consensus.peaks_sperm.rds")
+tracks <- c(
+  "Jung 1"="extern_data//ATAC_PRJNA480448_Sperm_GSM3262855.bw",
+  "Jung 2"="extern_data//ATAC_PRJNA480448_Sperm_GSM3262856.bw",
+  "Jung 3"="extern_data//ATAC_PRJNA315208_Sperm_GSM2088377.bw",
+  "Jung 4"="extern_data//ATAC_PRJNA315208_Sperm_GSM2088378.bw",
+  "Fischer 1"="extern_data/NoMx_N704_KG.bw",
+  "Fischer 2"="extern_data/NoMx_N705_KG.bw"
+)
+
+m <- signal2Matrix(tracks, peaks, w = 20, BPPARAM = 4)
+m <- epiwraps:::.ese2ml(m)
+n <- renormalizeBorders(lapply(m,log1p))
+
+pdf("plots_pdf/sperm_comparisons.pdf", width=17.5, height=10)
+h <- plotEnrichedHeatmaps(n, row_title="Peaks from spermatozoa", raster_resize_mat = TRUE, axis_name = c("-2kb","0","+2kb"), colors = rocket(2000), mean_trim = TRUE)
+print(h)
+dev.off()
+
+png("plots_png/sperm_comparisons.png", height=768)
+h <- plotEnrichedHeatmaps(n, row_title="Peaks from spermatozoa", raster_resize_mat = TRUE, axis_name = c("-2kb","0","+2kb"), colors = rocket(2000), mean_color = "#800080")
+print(h)
+dev.off()
+```
+
+
+
+# Fig S1B A549 atac motif enrichment
+
+sperm vs A549 enrichment
+
+```{r}
+d.sperm <- readRDS("objects/motif_enrichment_sperm_consensus_broad.rds")
+d.a549 <- readRDS("objects/motif_enrichment_sperm_A549.rds")
+m <- merge(d.a549, d.sperm, by="motif_id", suffixes=c(".a549",".sperm"))
+
+m.a549.sort <- m[order(m[,2],decreasing = FALSE),]
+m.a5495 <- m.a549.sort[1:3,]
+m.sperm.sort <- m[order(m[,18],decreasing = FALSE),]
+m.sperm5 <- m.sperm.sort[1:3,]
+m
+
+gr <- m.sperm.sort[2, ]
+stat1 <- m.a549.sort[1, ]
+```
+```{r}
+ggplot(m, aes(x=log2((1+tp.sperm)/(1+fp.sperm)), y= log2((1+tp.a549)/(1+fp.a549)), size=(tp_percent.sperm))) + 
+  geom_point() + 
+  #geom_point(aes(color = ifelse(abs(log2((1+tp.sperm)/(1+fp.sperm)) - log2((1+tp.a549)/(1+fp.a549))) <= 1, "grey", "black"))) + 
+  #geom_text_repel(box.padding=0.5, min.segment.length = 0, max.overlaps = 10, hjust = "left", aes(label=motif_id), data=m.a5495, size=4) + 
+  #geom_text_repel(box.padding= 0.5, min.segment.length = 0, max.overlaps = 10, hjust = "right", aes(label=motif_id), data=m.sperm5)+
+  geom_point(data=gr, color="orange")+
+  geom_text_repel(box.padding=0.5, min.segment.length = 0, max.overlaps = 10,  nudge_x = 0.3, direction = "x", hjust = "right", aes(label=motif_id ), data= gr)+
+  geom_point(data=stat1, color="blue")+
+  geom_text_repel(box.padding=0.5, min.segment.length = 0, max.overlaps = 10,  nudge_y = 0.3, direction = "y", hjust = "right", aes(label=motif_id ), data= stat1)+
+  #geom_point(color="orange", data=m.a5495) +
+  #geom_point(color="blue", data=m.sperm5) +
+  labs(color="Top enriched motifs")+
+  labs(x="log2(fold-enrichment in spermatozoa)", y="log2(fold-enrichment in A549)", size="% of set") +
+  #ylab("-log10 (adjusted p-value A549)")+
+  #xlab("-log10 (adjusted p-value spermatozoa)")+
+  theme_classic() +
+  #theme(legend.position = "none")+
+  ggtitle("Top ranked motifs in peaks of spermatozoa vs. A549")
+
+ggsave("./plots_svg/motif_enrichment_sperm_vs_A549_peaks.svg")
+ggsave("./plots_pdf/motif_enrichment_sperm_vs_A549_peaks.pdf")#, width = 6, height = 4)
+ggsave("./plots_png/motif_enrichment_sperm_vs_A549_peaks.png")
+
+```
+
+# Fig S1C - Sperm GRE peaks not accessible in immature germ cells across spermatogenesis 
+
+```{r}
+tracks <- c(
+  uds1="extern_data/ATACse_PRJNA399533_Thy1posSpermatogonia_GSM2751121.bw",
+  uds2="extern_data/ATACse_PRJNA399533_Thy1posSpermatogonia_GSM2751122.bw",
+  ds1="extern_data/ATACse_PRJNA399533_cKitposSpermatogonia_GSM2751125.bw",
+  ds2="extern_data/ATACse_PRJNA399533_cKitposSpermatogonia_GSM2751126.bw",
+  ps1="extern_data/ATACse_PRJNA399533_PachytenSpermatocytes_GSM2751129.bw",
+  ps2="extern_data/ATACse_PRJNA399533_PachytenSpermatocytes_GSM2751130.bw",
+  rs1="extern_data/ATACse_PRJNA399533_RoundSpermatides_GSM2751133.bw",
+  rs2="extern_data/ATACse_PRJNA399533_RoundSpermatides_GSM2751134.bw",
+  sperm1="extern_data/ATAC_PRJNA480448_Sperm_GSM3262855.bw",
+  sperm2="extern_data/ATAC_PRJNA480448_Sperm_GSM3262856.bw",
+  sperm3="extern_data/ATAC_PRJNA315208_Sperm_GSM2088377.bw",
+  sperm4="extern_data/ATAC_PRJNA315208_Sperm_GSM2088378.bw",
+  GVoocyte1="extern_data/ATAC_PRJNA480448_GVOocyte_GSM3262861.bw",
+  GVoocyte2="extern_data/ATAC_PRJNA480448_GVOocyte_GSM3262862.bw",
+  "MII oocyte"="extern_data/ATAC_PRJNA480448_MIIOocyte_GSM3262863.bw"
+)
+```
+
+```{r}
+peaks <- readRDS("./objects/narrow_overlaps_spermGRE_not_immatureGermCellsGRE.rds")
+m <- signal2Matrix(tracks, peaks, w = 20, BPPARAM = 2)
+m <- epiwraps:::.ese2ml(m)
+
+fused_uds_mat <- mergeSignalMatrices(m[1:2])
+fused_ds_mat <- mergeSignalMatrices(m[3:4])
+fused_ps_mat <- mergeSignalMatrices(m[5:6])
+fused_rs_mat <- mergeSignalMatrices(m[7:8])
+fused_sperm_mat <- mergeSignalMatrices(m[9:12])
+fused_gv_mat <- mergeSignalMatrices(m[13:14])
+
+fused_m <- c(list(fused_uds=fused_uds_mat), list(fused_ds=fused_ds_mat), list(fused_ps=fused_ps_mat), list(fused_rs=fused_rs_mat), list(fused_sperm=fused_sperm_mat), list(fused_GVoocytes=fused_gv_mat), m[15], m[-1:-15])
+fused_n <- renormalizeBorders(lapply(fused_m,log1p))
+
+#fused_m <- readRDS("rds_saves/paper/spermatogenesis_notimmature_fused_m.rds")
+#fused_n <- readRDS("rds_saves/paper/spermatogenesis_notimmature_fused_n.rds")
+```
+
+```{r}
+pdf("plots_pdf/GREpeaks_from_sperm_notimmature_across_spermatogenesis.pdf", width=17.5, height=10)
+h <- plotEnrichedHeatmaps(fused_m, row_title="Peaks from spermatozoa with GRE \n not accessible in immature germ cells", raster_resize_mat = FALSE, axis_name = c("-2kb","0","+2kb"), colors = rocket(2000), mean_color = "#800080")
+print(h)
+dev.off()
+```
+
+```{r}
+png("plots_png/GREpeaks_from_sperm_notimmature_across_spermatogenesis.png", height=768)
+h <- plotEnrichedHeatmaps(fused_m, row_title="Peaks from spermatozoa with GRE", raster_resize_mat = TRUE, axis_name = c("-2kb","0","+2kb"), colors = rocket(2000), mean_color = "#800080")
+print(h)
+dev.off()
+```
+# Fig S1D - Sperm GRE peaks across spermatogenesis hPTMs
+
+Combined plot normalized
+```{r activePTM-input, results='hide', fig.height=5, fig.width=4.5, fig.cap="Accessibility and ChIP signal of male germ cells at sperm peak regions"}
+tracks <- c(
+  H3K4me3="extern_data//SRR5049005.bw",#sperm4
+  H3K27ac="extern_data/SRR3225845.bw",#sperm1
+  H3K9ac="extern_data/SRR3225847.bw" #sperm1
+)
+
+peaks <- readRDS("objects/narrow_overlaps_spermGRE_not_immatureGermCellsGRE.rds")
+m <- signal2Matrix(tracks, peaks, w=20, BPPARAM = 4)
+m <- epiwraps:::.ese2ml(m)
+
+#norm_factor <- bwNormFactors(x = tracks)
+#m <- rescaleSignalMatrices(m,scaleFactors = norm_factor)
+n <- renormalizeBorders(lapply(m,log1p))
+
+#m <- readRDS("rds_saves/paper/hPTMs_spermNotImmature_m.rds")
+#n <- readRDS("rds_saves/paper/hPTMs_spermNotImmature_n.rds")
+```
+
+
+
+Single panels of heatmaps
+```{r}
+# Create a list of heatmaps
+for (i in 1:length(n)) {
+  h <- plotEnrichedHeatmaps(n[i], raster_resize_mat = TRUE, axis_name = c("-2kb","0","+2kb"), colors = magma(2000), mean_color = "#800080",
+                            heatmap_legend_param = list(legend_direction = "horizontal", legend_width = unit(0.28, "npc"), title=NULL))
+  
+  # Save each heatmap to a PDF
+    pdf(paste0("plots_pdf/GREpeaks_from_sperm_notImmature_hPTMs_normalized_", i, ".pdf"), width=2.5, height=10)
+  draw(h, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+}
+```
+
+```{r}
+# Create a list of heatmaps
+for (i in 1:length(n)) {
+  h <- plotEnrichedHeatmaps(n[i], raster_resize_mat = TRUE, axis_name = c("-2kb","0","+2kb"), colors = magma(2000), mean_color = "#800080",
+                            heatmap_legend_param = list(legend_direction = "horizontal", legend_width = unit(0.4, "npc"), title=NULL))
+
+  # Save each heatmap to a PNG
+  png(paste0("plots_png/GREpeaks_from_sperm_notImmature_hPTMs_normalized_", i, ".png"), width=250, height=768)
+  draw(h, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+}
+```
+
+
+
+# Fig  S1E - Promoters with GRE across sperm ATAC and hPTMs
+
+```{r}
+
+tracks <- c(
+  sperm1="extern_data/ATAC_PRJNA480448_Sperm_GSM3262855.bw",
+  sperm2="extern_data/ATAC_PRJNA480448_Sperm_GSM3262856.bw",
+  sperm3="extern_data/ATAC_PRJNA315208_Sperm_GSM2088377.bw",
+  sperm4="extern_data/ATAC_PRJNA315208_Sperm_GSM2088378.bw",
+  sperm1_H3K4me3="extern_data/SRR3309386.bw",
+  sperm2_H3K4me3="extern_data/SRR3309387.bw",
+  sperm3_H3K4me3="extern_data/SRR3703039.bw",
+  sperm4_H3K4me3="extern_data/SRR5049005.bw",
+  sperm5_H3K4me3="extern_data/SRR3225849.bw",
+  sperm1_H3K27ac="extern_data/SRR3225845.bw",
+  sperm2_H3K27ac="extern_data/SRR5049001.bw",
+  sperm1_H3K9ac="extern_data/SRR3225847.bw",
+  sperm2_H3K9ac="extern_data/SRR5049003.bw",
+  sperm1_H3K4me1="extern_data/SRR3225848.bw",
+  sperm2_H3K4me1="extern_data/SRR5049004.bw",
+  sperm1_H3.3="extern_data/ChIP_PRJNA480447_Sperm_GSM3262880.bw",  
+  sperm2_H3.3="extern_data/ChIP_PRJNA480447_Sperm_GSM3262881.bw",
+  sperm1_H2A.Z="extern_data/ChIP_PRJNA480447_Sperm_GSM3262882.bw",
+  sperm2_H2A.Z="extern_data/ChIP_PRJNA480447_Sperm_GSM3262880.bw"
+)
+
+
+
+proms <- readRDS("objects/GRE_promoters_center.rds")
+
+m <- signal2Matrix(tracks, proms, w = 20, BPPARAM = 8)
+
+
+fused_sperm <- mergeSignalMatrices(m[1:4])
+fused_H3K4me3 <- mergeSignalMatrices(m[5:9])
+fused_H3K27ac <- mergeSignalMatrices(m[10:11])
+fused_H3K9ac <- mergeSignalMatrices(m[12:13])
+fused_H3K4me1 <- mergeSignalMatrices(m[14:15])
+fused_H3.3 <- mergeSignalMatrices(m[16:17])
+fused_H2A.Z <- mergeSignalMatrices(m[18:19])
+
+fused_m <- c(list(fused_sperm=fused_sperm), list(fused_H3K4me3=fused_H3K4me3), list(fused_H3K27ac=fused_H3K27ac), list(fused_H3K9ac=fused_H3K9ac), list(fused_H3K4me1=fused_H3K4me1), list(fused_H3.3=fused_H3.3), list(fused_H2A.Z=fused_H2A.Z), m[-1:-19])
+fused_n <- renormalizeBorders(lapply(fused_m,log1p))
+
+fused_m1 <- fused_m[1:3]
+```
+
+
+
+
+```{r}
+pdf("plots_pdf/GREpromoters.pdf", width=7, height=10)
+h <- plotEnrichedHeatmaps(fused_m1, row_title="Promoter regions with GRE", raster_resize_mat = TRUE, axis_name = c("-2kb","0","+2kb"), colors = rocket(2000), mean_color = "#800080")
+print(h)
+dev.off()
+
+png("plots_png/GREpromoters.png", height=768)
+h <- plotEnrichedHeatmaps(fused_m1, row_title="Promoter regions with GRE", raster_resize_mat = TRUE, axis_name = c("-2kb","0","+2kb"), colors = rocket(2000), mean_color = "#800080")
+print(h)
+dev.off()
+```
+
+
+# Fig S1F - Heatmap for ICR in mm10
+```{r}
+ICR <- read.csv("objects/ICR_Weber_mm10.csv",header = T)
+ICR$seqnames <- ICR$X.chrom
+ICR <- GRanges(ICR)
+
+bw_mm10 <- list.files(path = "intern_data/Nanopore/",pattern = "_5mC_4reads|_5mC_(.*_noSex)",full.names = T)
+names(bw_mm10) <- c("Ctrl1","Ctrl2","KO1","KO2")
+```
+
+```{r}
+Met_bed <- sapply(names(bw_mm10),function(names){
+  import.bw(bw_mm10[names])
+  
+  })
+```
+
+
+
+
+```{r}
+sm <- signal2Matrix(filepaths = Met_bed,regions = ICR,w =10,type = "scaled",smooth = T,limit = c(0,100))
+plotEnrichedHeatmaps(sm)
+as.data.frame(ICR)
+set.seed(123)
+cl <- epiwraps::clusterSignalMatrices(sm,k = 2)
+cl2 <- as.character(cl)
+
+cl2[cl2 == 1] <- ("Maternal")
+
+cl2[cl2 == 2] <- ("Paternal")
+
+
+cl2 <- as.factor(cl2)
+
+```
+
+```{r}
+sm_merge_Ctrl <- mergeSignalMatrices(sm[,1:2])
+
+
+```
+
+```{r}
+mycolors2 <- c("Maternal" = "firebrick","Paternal"= "steelblue")
+p <- plotEnrichedHeatmaps(list("ICR" = sm_merge_Ctrl),row_split = cl2,scale_title = "5mC[%]",mean_color  = mycolors2, use_raster = T,heatmap_legend_param = list(legend_direction = "horizontal", legend_width = unit(0.28,"npc"), title = NULL))
+```
+
+```{r}
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+
+  png(paste0("plots_png/FigS1F.png"), width=250, height=500)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+  
+  pdf(paste0("plots_pdf/FigS1F.pdf"), width=3.5, height=7.5)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+  
+  svg(paste0("plots_svg/FigS1F.svg"), width=3.5, height=7.5)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+```
+
+# Fig S1G - Display of methlyation score distribution
+```{r}
+set.seed(1234)
+Met_bed_Ctrl <- Met_bed[1:2]
+df <- rbind(as.data.frame(sample(Met_bed_Ctrl$Ctrl1$score,size = 100000)),y = as.data.frame(sample(Met_bed_Ctrl$Ctrl1$score,size = 100000))) 
+df$score <- df$`sample(Met_bed_Ctrl$Ctrl1$score, size = 1e+05)`
+df$Sample <- rep("S1",nrow(df))
+df$Sample[((nrow(df)/2)+1):nrow(df)] <- "S2" 
+```
+```{r}
+ggplot(data = df,aes(x = score,group = Sample)) +
+  #geom_histogram(aes(y = ..density..), bins = 30, fill = NULL, alpha = 0.5) +
+  geom_density(color = "orange2", size = 1,fill = "orange2",alpha = 0.5) +
+  labs(title = "5mC Score Distribution in mature sperm", x = "5mC score [%]", y = "Density") +
+  theme_bw()+theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+ggsave("plots_svg/FigS1G_5mC_score_distribution.svg")
+ggsave("plots_pdf/FigS1G_5mC_score_distribution.pdf")
+ggsave("plots_png/FigS1G_5mC_score_distribution.png")
+```
+
+# Fig S1H - Promoters with GRE at accesible site of ATAC H3k4me3 5mC
+
+```{r}
+proms <- readRDS("objects/GRE_promoters_center.rds")
+```
+
+
+```{r}
+tracks <- c(
+  sperm1="extern_data/ATAC_PRJNA480448_Sperm_GSM3262855.bw",
+  sperm2="extern_data/ATAC_PRJNA480448_Sperm_GSM3262856.bw",
+  sperm3="extern_data/ATAC_PRJNA315208_Sperm_GSM2088377.bw",
+  sperm4="extern_data/ATAC_PRJNA315208_Sperm_GSM2088378.bw",
+  sperm1_H3K4me3="extern_data/SRR3309386.bw",
+  sperm2_H3K4me3="extern_data/SRR3309387.bw",
+  sperm3_H3K4me3="extern_data/SRR3703039.bw",
+  sperm4_H3K4me3="extern_data/SRR5049005.bw",
+  sperm5_H3K4me3="extern_data/SRR3225849.bw",
+  sperm1_H3K27ac="extern_data/SRR3225845.bw",
+  sperm2_H3K27ac="extern_data/SRR5049001.bw",
+  sperm1_H3K9ac="extern_data/SRR3225847.bw",
+  sperm2_H3K9ac="extern_data/SRR5049003.bw",
+  sperm1_H3K4me1="extern_data/SRR3225848.bw",
+  sperm2_H3K4me1="extern_data/SRR5049004.bw",
+  sperm1_H3.3="extern_data/ChIP_PRJNA480447_Sperm_GSM3262880.bw",  
+  sperm2_H3.3="extern_data/ChIP_PRJNA480447_Sperm_GSM3262881.bw",
+  sperm1_H2A.Z="extern_data/ChIP_PRJNA480447_Sperm_GSM3262882.bw",
+  sperm2_H2A.Z="extern_data/ChIP_PRJNA480447_Sperm_GSM3262880.bw"
+)
+
+
+
+```
+
+```{r}
+peaks <- readRDS("objects/narrow_peaks_with_GRE_sperm.rds")
+```
+
+```{r}
+peaks2 <- peaks[overlapsAny(peaks,proms)]
+seqnames(peaks2)
+peaks2 <- keepStandardChromosomes(peaks2,pruning.mode = "coarse") 
+peaks2 <- dropSeqlevels(peaks2,value = c("MT","Y","X"),pruning.mode = "coarse") 
+```
+
+
+```{r}
+sm_5mC <- signal2Matrix(w = 20L , smooth = T, limit = c(0,100), filepaths = methyl_bed, regions = peaks2)
+```
+
+```{r}
+plotEnrichedHeatmaps(sm_5mC)
+```
+```{r}
+sm2 <- signal2Matrix(w = 20L, filepaths = tracks[c(1:4,5:9)],regions = peaks2)
+plotEnrichedHeatmaps(sm2)
+```
+```{r}
+plotEnrichedHeatmaps(c(epiwraps:::.ese2ml(sm2),epiwraps:::.ese2ml(sm_5mC)),multiScale = T,show_heatmap_legend = F)
+```
+```{r}
+sm_merge <- mergeSignalMatrices(epiwraps:::.ese2ml(sm2)[1:4])
+sm_merge_H3K4me3 <- mergeSignalMatrices(epiwraps:::.ese2ml(sm2)[5:9])
+sm_merge_5mC <- mergeSignalMatrices(epiwraps:::.ese2ml(sm_5mC)[1:2])
+```
+
+```{r,fig.height=10}
+plotEnrichedHeatmaps(ml = list(ATAC = sm_merge,H3K4me3 = sm_merge_H3K4me3,"5mC" = sm_merge_5mC),multiScale = T,row_title = "Accessible promoters with GRE")
+```
+```{r}
+p <- plotEnrichedHeatmaps(ml = list(ATAC = sm_merge,H3K4me3 = sm_merge_H3K4me3),multiScale = T,row_title = "Accessible promoters with GRE",color = rocket(2000),scale_title = "density",axis_name = c("-2kb","TSS","+2kb"), use_raster = T,mean_scale_side = "none",  heatmap_legend_param = list(legend_direction = "horizontal", legend_width = unit(0.4,"npc"), title=NULL))+
+                       plotEnrichedHeatmaps(ml = list("5mC" = sm_merge_5mC),row_title = "Accessible promoters with GRE",use_raster =TRUE, scale_title = "5mc[%]",axis_name = c("-2kb","TSS","+2kb"),mean_scale_side = "none",  heatmap_legend_param = list(legend_direction = "horizontal", legend_width = unit(0.4,"npc"), title=NULL));p
+# p
+ #draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+ 
+ #draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+
+  png(paste0("plots_png/FigS1H.png"), width=750, height=768)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+  
+  pdf(paste0("plots_pdf/FigS1H.pdf"), width=7.5, height=10)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+  
+  svg(paste0("plots_svg/FigS1H.svg"), width=7.5, height=10)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+```
+each heatmap on its own
+```{r}
+#ATAC
+p <- plotEnrichedHeatmaps(ml = list(ATAC = sm_merge),multiScale = F,row_title = "Accessible promoters with GRE",color = rocket(2000),scale_title = "density",axis_name = c("-2kb","TSS","+2kb"), use_raster = T,  heatmap_legend_param = list(legend_direction = "horizontal", legend_width = unit(0.4,"npc"), title=NULL))
+png(paste0("plots_png/FigS1HATAC.png"), width=250, height=768)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+  
+  pdf(paste0("plots_pdf/FigS1HATAC.pdf"), width=2.5, height=10)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+  
+  svg(paste0("plots_svg/FigS1HATAC.svg"), width=2.5, height=10)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+# H*K4m3 
+  p <- plotEnrichedHeatmaps(ml = list(H3K4me3 = sm_merge_H3K4me3),multiScale = F,row_title = "Accessible promoters with GRE",color = rocket(2000),scale_title = "density",axis_name = c("-2kb","TSS","+2kb"), use_raster = T,  heatmap_legend_param = list(legend_direction = "horizontal", legend_width = unit(0.4,"npc"), title=NULL))
+png(paste0("plots_png/FigS1HH3K4me3.png"), width=250, height=768)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+  
+  pdf(paste0("plots_pdf/FigS1HH3K4me3.pdf"), width=2.5, height=10)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+  
+  svg(paste0("plots_svg/FigS1HH3K4me3.svg"), width=2.5, height=10)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+  
+# 5mC
+  
+p <-   plotEnrichedHeatmaps(ml = list("5mC" = sm_merge_5mC),row_title = "Accessible promoters with GRE",use_raster =TRUE, scale_title = "5mc[%]",axis_name = c("-2kb","TSS","+2kb"),  heatmap_legend_param = list(legend_direction = "horizontal", legend_width = unit(0.4,"npc"), title=NULL))
+png(paste0("plots_png/FigS1H5mc.png"), width=250, height=768)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+  
+  pdf(paste0("plots_pdf/FigS1H5mc.pdf"), width=2.5, height=10)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+  
+  svg(paste0("plots_svg/FigS1H5mc.svg"), width=2.5, height=10)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+  
+```
+
+# Fig 2B - Validation of GR-KO
+
+```{r}
+methyl_bw2 <- list.files(path = "intern_data/Nanopore/",pattern = "_..bw$",full.names = T)
+```
+
+
+
+```{r}
+ensdb_mm10 <- ah[["AH89211"]]
+```
+
+
+```{r}
+plotSignalTracks(files = list( "PGC-GR-KO" = methyl_bw2[3:4], Control = methyl_bw2[1:2]),overlay.alpha = 75,region = "18:39420652-39434571",aggregation = "overlay",colors = c("orange","darkgrey"),genomeAxis = T,ensdb = ensdb_mm10,extend = c(0,0), fontface.main = 1,cex.main = 1,cex.id=0.9,cex.title = 0.7, ylim = c(0,0.1),) # , rotation.title = 0
+grid.text(paste0("Nr3c1"), x = 0.5, y = 0.13, gp = gpar(fontsize = 10, fontface = "bold")) 
+```
+
+```{r}
+png(paste0("plots_png/Fig2B.png"), width=750, height=512)
+plotSignalTracks(files = list( "PGC-GR-KO" = methyl_bw2[3:4], Control = methyl_bw2[1:2]),overlay.alpha = 75,region = "18:39420652-39434571",aggregation = "overlay",colors = c("orange","darkgrey"),genomeAxis = T,ensdb = ensdb_mm10,extend = c(0,0), fontface.main = 1.4,cex.main = 1,cex.id=0.9,cex.title = 0.9, ylim = c(0,0.1),) # , rotation.title = 0
+grid.text(paste0("Nr3c1"), x = 0.5, y = 0.15, gp = gpar(fontsize = 15, fontface = "bold")) 
+dev.off()
+
+pdf(paste0("plots_pdf/Fig2B.pdf"), width=8, height=7,colormodel = "cymk")
+plotSignalTracks(files = list( "PGC-GR-KO" = methyl_bw2[3:4], Control = methyl_bw2[1:2]),overlay.alpha = 75,region = "18:39420652-39434571",aggregation = "overlay",colors = c("orange","darkgrey"),genomeAxis = T,ensdb = ensdb_mm10,extend = c(0,0), fontface.main = 1.4,cex.main = 1,cex.id=0.9,cex.title = 0.9, ylim = c(0,0.1),) # , rotation.title = 0
+grid.text(paste0("Nr3c1"), x = 0.5, y = 0.15, gp = gpar(fontsize = 15, fontface = "bold")) 
+dev.off()
+
+
+svg(paste0("plots_svg/Fig2B.svg"), width=8, height=7)
+plotSignalTracks(files = list( "PGC-GR-KO" = methyl_bw2[3:4], Control = methyl_bw2[1:2]),overlay.alpha = 75,region = "18:39420652-39434571",aggregation = "overlay",colors = c("orange","darkgrey"),genomeAxis = T,ensdb = ensdb_mm10,extend = c(0,0), fontface.main = 1.4,cex.main = 1,cex.id=0.9,cex.title = 0.9, ylim = c(0,0.1),) # , rotation.title = 0
+grid.text(paste0("Nr3c1"), x = 0.5, y = 0.15, gp = gpar(fontsize = 15, fontface = "bold")) 
+dev.off()
+
+```
+
+
+# Fig 2C DMRs PGC-GR-KO sperm heatmap
+regions of interest
+```{r}
+HyperDMR <- readRDS("objects/hyper_mm39.rds") 
+HypoDMR <- readRDS("objects/hypo_mm39.rds")
+
+DMR <- unlist(GRangesList(HyperDMR,HypoDMR))
+
+
+```
+
+
+
+
+```{r}
+i <- integer(length(DMR))
+i[1:(length(HyperDMR))] <- "HyperDMR"
+i[((length(HyperDMR))+1):length(DMR)] <- "HypoDMR"
+
+```
+
+tracks
+```{r}
+#NanoporeTracks
+methyl_bw <- list.files(path = "intern_data/Nanopore//",pattern = "39.bw",full.names = T)
+names(methyl_bw) <- c("Control 1","Control 2","PGC-GR-KO 1","PGC-GR-KO 2")
+```
+
+
+
+```{r}
+methyl_bed <- sapply(names(methyl_bw),function(names){
+  import.bw(methyl_bw[names])
+  
+  })
+```
+
+
+
+
+initial heatmap of DMRs smooth
+```{r}
+sm1 <- signal2Matrix(filepaths = methyl_bed,w = 20,regions = DMR,smooth = T,limit = c(0,100))
+```
+
+
+```{r,fig.width=10}
+mycolors <- c("HyperDMR"="#ffa500ff", "HypoDMR"= "#c0c0ffff")
+p <- plotEnrichedHeatmaps((sm1),row_split = i,scale_rows = F,mean_color = mycolors,mean_scale_side = "left", top_annotation = TRUE,scale_title = "5mC [%]",axis_name = c("-2kb","0","+2kb"),row_title = "DMRs")
+
+p
+```
+
+```{r}
+mycolors <- c("HyperDMR"="#ffa500ff", "HypoDMR"= "#c0c0ffff")
+p <- plotEnrichedHeatmaps((sm1),row_split = i,scale_rows = F,mean_color = mycolors,mean_scale_side = "left", top_annotation = TRUE,scale_title = "5mC [%]",axis_name = c("-2kb","0","+2kb"),row_title = "DMRs", heatmap_legend_param = list(legend_direction = "horizontal", legend_width = unit(0.28, "npc"), title=NULL))
+
+p
+```
+
+
+```{r}
+
+
+  png(paste0("plots_png/Fig2C.png"), width=1000, height=768)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+  
+  pdf(paste0("plots_pdf/Fig2C.pdf"), width=10, height=10)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+  
+  svg(paste0("plots_svg/Fig2C.svg"), width=10, height=10)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+```
+
+
+
+# Fig 2D DMRs overlapping with GRE in promoter heatmap
+
+```{r}
+ensdb <- ah[["AH89457"]] # GRCm39
+
+promoters <- promoters(ensdb)
+```
+we use fimo to get GRE in all promoters
+```{r}
+genome <- Rsamtools::FaFile("objects/Mus_musculus.GRCm39.dna_sm.primary_assembly.fa")
+#promoters <- keepStandardChromosomes(promoters,pruning.mode = "coarse")
+#promoters <- dropSeqlevels(x = promoters,value = "MT",pruning.mode = "coarse")
+#promoter_seq <- get_sequence(regions = keepStandardChromosomes(promoters,pruning.mode = "coarse"),genome = genome)
+#GRE_promoters <- memes::runFimo(sequences = promoter_seq,motifs = motifs$GCR,meme_path = "/common/meme/bin/")
+#GRE_promoters <- reduce(GRE_promoters)
+#saveRDS(GRE_promoters,"reduced_GRE_promoters_mm39.rds")
+GRE_promoters <- readRDS("objects/reduced_GRE_promoters_mm39.rds")
+```
+
+
+
+```{r}
+DMR_GRE_prom <- DMR[overlapsAny(DMR,GRE_promoters)]
+
+DMR_GRE_up <- HyperDMR[overlapsAny(HyperDMR,GRE_promoters)]
+
+DMR_GRE_down <- HypoDMR[overlapsAny(HypoDMR,GRE_promoters)]
+
+
+DMR_GRE_both <- unlist(GRangesList(DMR_GRE_up,DMR_GRE_down))
+```
+
+
+
+initial heatmap of DMRs smooth
+```{r}
+
+sm1 <- signal2Matrix(filepaths = methyl_bed,w = 20,regions = DMR_GRE_both,smooth = T,limit = c(0,100))
+```
+
+
+
+```{r}
+i <- integer(length(DMR_GRE_both))
+i[1:(length(DMR_GRE_up))] <- "HyperDMR"
+i[((length(DMR_GRE_up))+1):length(DMR_GRE_both)] <- "HypoDMR"
+
+```
+
+
+
+
+
+```{r,fig.width=10}
+
+mycolors <- c("HyperDMR"="#ffa500ff", "HypoDMR"= "#c0c0ffff")
+p <- plotEnrichedHeatmaps((sm1),row_split = i,mean_color = mycolors,scale_rows = F, mean_scale_side = "left", top_annotation = TRUE,scale_title = "5mC [%]",row_title = "DMRs overlapping GRE-sites in Promoters",axis_name = c("-2kb","GRE","+2kb"))
+
+p
+```
+
+```{r}
+mycolors <- c("HyperDMR"="#ffa500ff", "HypoDMR"= "#c0c0ffff")
+p <- plotEnrichedHeatmaps((sm1),row_split = i,mean_color = mycolors,scale_rows = F, mean_scale_side = "left", top_annotation = TRUE,scale_title = "5mC [%]",row_title = "DMRs overlapping GRE-sites in Promoters", axis_name = c("-2kb","GRE","+2kb") ,heatmap_legend_param = list(legend_direction = "horizontal", legend_width = unit(0.28, "npc"), title=NULL),use_raster = T,trim = c(0.0001,0.9999))
+
+p
+```
+
+
+```{r}
+
+
+  png(paste0("plots_png/Fig2D.png"), width=1000, height=768)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+  
+  pdf(paste0("plots_pdf/Fig2D.pdf"), width=10, height=10)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+  
+  svg(paste0("plots_svg/Fig2D.svg"), width=10, height=10)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+```
+
+
+# Fig 2E - DEG heatmap PGC-GR-KO embryos
+
+```{r}
+# Load the data
+se <- readRDS("objects/SEs_for_SEV/VF_2cell_embyro_early_paternal_GR_KO(Alpl).SE.rds")
+
+# Extract assays and row data
+assays(se)
+rowData(se)
+dea <- rowData(se)[[2]]
+dea
+
+# Subset differentially expressed genes with FDR < 0.05
+deaFDR <- subset(dea, dea$FDR < 0.05)
+deaFDR
+
+# Define treatments and colors
+treatments <- c("ctrl", "Early_GR_KO") # Specify the order explicitly
+colors <- c("#DEDFE4", "darkgrey") # Adjust colors as needed
+
+# Ensure the number of colors matches the number of treatments
+if (length(colors) != length(treatments)) {
+  stop("Number of colors must match number of treatments")
+}
+
+# Create a named vector for color mapping
+color_mapping <- setNames(colors, treatments)
+
+# Reorder columns in the se object
+se <- se[, order(factor(colData(se)$condition, levels = treatments))]
+
+# Add color_mapping to the heatmap annotation
+ha = HeatmapAnnotation(df = data.frame(condition = factor(colData(se)$condition, levels = treatments)),
+                       col = list(condition = color_mapping))
+
+# Define color palette for the heatmap
+color_palette <- colorRampPalette(c("blue", "black", "orange"))(100)
+
+pdf("plots_pdf/DEGs_VF-Alpl-KO_heatmap.pdf", height=4) #, width=14.5, height=10)
+x <- sechm(se, rownames(deaFDR), assayName = "log2FC", do.scale = FALSE, hmcols = color_palette, top_annotation = ha, row_title = "Differentially expressed genes", gaps_at="condition", use_raster = TRUE)
+print(x)
+dev.off()
+
+png("plots_png/DEGs_VF-Alpl-KO_PROTAC_heatmap.png", height=768)
+x <- sechm(se, rownames(deaFDR), assayName = "log2FC", do.scale = FALSE, hmcols = color_palette, top_annotation = ha, row_title = "Differentially expressed genes", gaps_at="condition", use_raster = TRUE)
+print(x)
+dev.off()
+
+svg("plots_svg/DEGs_VF-Alpl-KO_heatmap.svg") #, width=14.5, height=10)
+x <- sechm(se, rownames(deaFDR), assayName = "log2FC", do.scale = FALSE, hmcols = color_palette, top_annotation = ha, row_title = "Differentially expressed genes", gaps_at="condition", use_raster = TRUE)
+print(x)
+dev.off()
+
+sechm(se, rownames(deaFDR), assayName = "log2FC", do.scale = FALSE, hmcols = color_palette, top_annotation = ha, row_title = "Differentially expressed genes", gaps_at="condition", use_raster = TRUE) 
+```
+
+
+#Fig 2F - volcano DEGs PGC-GR-KO
+
+
+```{r}
+library(scales)
+se <- readRDS("objects/VF_2cell_embyro_early_paternal_GR_KO(Alpl).SE.rds")
+
+# Extract assays and row data
+assays(se)
+rowData(se)
+dea <- rowData(se)[[2]]
+dea$Gene <- dea$ID
+
+# Subset differentially expressed genes with FDR < 0.05
+deaFDR <- subset(dea, dea$FDR < 0.005)
+deaFDR
+
+xlim <- c(-7, 7)
+ylim <- c(0,6)
+
+# Function to generate volcano plots
+generate_volcano_plot <- function(df, title) {
+  df$highlight <- df$FDR < 0.01
+  df$extreme[df$logFC > xlim[2] | df$logFC < xlim[1] | -log10(df$FDR) > ylim[2] | -log10(df$FDR) < ylim[1]] <- "extreme"
+  df$highlight[df$extreme == "extreme"] <- "extreme"
+  top_genes <- df[order(df$FDR), ][1:25, ]
+  ggplot(df, aes(x=logFC, y=-log10(FDR))) +
+    geom_point(aes(color = highlight)) +
+    scale_color_manual(values = c("TRUE" = "orange", "FALSE" = "black", "extreme" = "firebrick3")) +
+    geom_text_repel(data = subset(top_genes, highlight == TRUE | highlight == "extreme"), aes(label=Gene), size=3.5, min.segment.length = 0, max.overlaps = Inf, nudge_y = 0.1) +
+    geom_hline(yintercept=-log10(0.05), linetype="dashed")+
+    xlab("logFC") +
+    ylab("-log10(adjusted p-value)") +
+    theme_classic() +
+    theme(legend.position="none") +
+    scale_x_continuous(limits = xlim, oob = squish) +
+    scale_y_continuous(limits = ylim, oob = squish) +
+    ggtitle(title)
+}
+
+# Apply the function to each dataframe in the list
+generate_volcano_plot(dea, "Differentially expressed genes in PGC-GR-KO 2-cell embryos")
+ggsave("plots_svg/Fig2F_DEGs_VF-KO_volcano.svg")
+ggsave("plots_pdf/Fig2F_DEGs_VF-KO_volcano.pdf")
+ggsave("plots_png/Fig2F_DEGs_VF-KO_volcano.png")
+```
+
+
+
+# Fig 2G 5mC at Mtus1
+
+```{r}
+ensdb <- ah[["AH89457"]]
+```
+
+
+```{r}
+plotSignalTracks(files = list("PGC-GR-KO"=methyl_bw[c(3,4)],Control =methyl_bw[c(1,2)]),overlay.alpha = 75,region = "8: 41494253-41495035",aggregation = "overlay",colors = c("orange","darkgrey"),genomeAxis = T,ensdb = ensdb,extend = c(1000,1000),ylim= c(0,100), fontface.main = 1,cex.main = 1,cex.id=0.9,cex.title = 0.7) # , rotation.title = 0
+grid.text(paste0("DMR: Mtus1/Gm16192"), x = 0.5, y = 0.95, gp = gpar(fontsize = 10, fontface = "bold"))
+```
+
+```{r}
+png(paste0("plots_png/Fig2G.png"), width=750, height=512)
+plotSignalTracks(files = list("PGC-GR-KO"=methyl_bw[c(3,4)],Control =methyl_bw[c(1,2)]),overlay.alpha = 75,region = "8: 41494253-41495035",aggregation = "overlay",colors = c("orange","darkgrey"),genomeAxis = T,ensdb = ensdb,extend = c(1000,1000),ylim= c(0,100), fontface.main = 1.4,cex.main = 0.9,cex.id=0.9,cex.title = 0.9) # , rotation.title = 0
+grid.text(paste0("DMR: Mtus1/Gm16192"), x = 0.5, y = 0.95, gp = gpar(fontsize = 15, fontface = "bold")) 
+dev.off()
+
+pdf(paste0("plots_pdf/Fig2G.pdf"), width=8, height=7,colormodel = "cymk")
+plotSignalTracks(files = list("PGC-GR-KO"=methyl_bw[c(3,4)],Control =methyl_bw[c(1,2)]),overlay.alpha = 75,region = "8: 41494253-41495035",aggregation = "overlay",colors = c("orange","darkgrey"),genomeAxis = T,ensdb = ensdb,extend = c(1000,1000),ylim= c(0,100), fontface.main = 1.4,cex.main = 0.9,cex.id=0.9,cex.title = 0.9) # , rotation.title = 0
+grid.text(paste0("DMR: Mtus1/Gm16192"), x = 0.5, y = 0.95, gp = gpar(fontsize = 15, fontface = "bold"))
+dev.off()
+
+
+svg(paste0("plots_svg/Fig2G.svg"), width=8, height=7)
+plotSignalTracks(files = list("PGC-GR-KO"=methyl_bw[c(3,4)],Control =methyl_bw[c(1,2)]),overlay.alpha = 75,region = "8: 41494253-41495035",aggregation = "overlay",colors = c("orange","darkgrey"),genomeAxis = T,ensdb = ensdb,extend = c(1000,1000),ylim= c(0,100), fontface.main = 1.4,cex.main = 0.9,cex.id=0.9,cex.title = 0.9) # , rotation.title = 0
+grid.text(paste0("DMR: Mtus1/Gm16192"), x = 0.5, y = 0.95, gp = gpar(fontsize = 15, fontface = "bold"))
+dev.off()
+
+```
+
+
+
+#Fig 2H 5mC at Promoter of embryo DEA
+
+```{r}
+dea <- readRDS("objects/DEA_e2c.rds")
+annGR <- readRDS("objects/annGR.rds")
+```
+
+
+
+```{r}
+set.seed(1234)
+annGR <- readRDS("objects/annGR.rds")
+annGR2 <-keepStandardChromosomes(annGR[annGR$gene_name %in% dea$ID,],pruning.mode = "coarse"); annGR <- dropSeqlevels(annGR,value = c("chrMT","X","Y"),pruning.mode = "coarse") 
+DEA_up <- annGR[annGR$gene_name %in% dea$ID[(dea$FDR < 0.05) & (dea$logFC < 0)] ,]
+DEA_up <- keepStandardChromosomes(DEA_up,pruning.mode = "coarse"); DEA_up <- dropSeqlevels(DEA_up,value = c("chrMT","X","Y"),pruning.mode = "coarse")
+DEA_up <- reduce(DEA_up)
+
+
+
+DEA_down <- annGR[annGR$gene_name %in% dea$ID[(dea$FDR < 0.05) & (dea$logFC > 0)] ,]
+DEA_down <- keepStandardChromosomes(DEA_down,pruning.mode = "coarse"); DEA_down <- dropSeqlevels(DEA_down,value = c("chrMT","X","Y"),pruning.mode = "coarse")  
+DEA_down <- reduce(DEA_down)
+DEA_down <- sample(DEA_down,size = length(DEA_up))
+
+
+DEA <- unlist(GRangesList(DEA_up,DEA_down))
+
+
+
+# we remove random promoters which have now overlap with any methylData
+annGR2 <- annGR2[overlapsAny(annGR2,unlist(GRangesList(methyl_bed)))]
+
+randDEA <- sample(reduce(annGR2[!overlapsAny(annGR2,DEA),]),length(DEA_up))
+
+DEA2 <- unlist(GRangesList(DEA_up,DEA_down,randDEA))
+
+DEA <- resize(DEA,width = 2,fix = "start")
+DEA2 <- resize(DEA2,width = 2,fix = "start")
+
+
+# sanity check
+#proms <- promoters(ensdb,upstream = 5,downstream = 5)
+
+#overlapsAny(DEA2,proms)
+```
+
+```{r}
+k <- integer(length(DEA2))
+k[1:(length(DEA_up))] <- "PGC-GR-KO\nearlyEmbryo UP"
+k[((length(DEA_up))+1):(length(DEA_up)+length(DEA_down))] <- "PGC-GR-KO\nearlyEmbryo DOWN"
+k[(((length(DEA_up)+length(DEA_down)))+1):length(DEA2)] <- "randomProms"
+```
+
+
+```{r}
+i <- integer(length(DEA))
+i[1:(length(DEA_up))] <- "PGC-GR-KO\nearlyEmbryo UP"
+i[((length(DEA_up))+1):length(DEA)] <- "PGC-GR-KO\nearlyEmbryo DOWN"
+
+```
+
+```{r}
+sm1 <- signal2Matrix(filepaths = methyl_bed,w = 1,regions = DEA2,smooth = T,limit = c(0,100),extend = c(500,1500))
+
+plotEnrichedHeatmaps(sm1)
+```
+```{r}
+melt <- meltSignals(sm1,splitBy = k)
+melt$Group <- melt$split
+```
+```{r}
+theme_set(theme_bw())
+ggplot(melt, aes(position, mean, colour=Group, group = Group, fill = Group)) +
+  geom_vline(xintercept=0, linetype="dashed") +
+  labs(x="TSS", y="mean 5mC [%]")+
+  stat_summary(geom="ribbon", alpha=0.3, colour = NA ) + stat_summary(fun=median, geom="line", size = 0.6)+
+  ggtitle("5mC levels of sperm at\npromoter regions of DEAs in the PGC-GR-KO embryo")+   
+  scale_color_manual(values = c("#c0c0ffff","#ffa500ff","forestgreen")) +
+  scale_fill_manual(values = c("#c0c0ffff","#ffa500ff","forestgreen")) +
+  theme(text = element_text(size = 10), axis.title.x = element_text(hjust = 0.26))
+
+
+
+
+
+```
+```{r}
+theme_set(theme_bw())
+ggplot(melt, aes(position, mean, colour=Group, group = Group, fill = Group)) +
+  geom_vline(xintercept=0, linetype="dashed") +
+  labs(x="TSS", y="mean 5mC [%]")+
+  stat_summary(geom="ribbon", alpha=0.3, colour = NA ) + stat_summary_bin(fun=mean, geom="line", size = 0.6)+
+  ggtitle("5mC levels of sperm at\npromoter regions of DEAs in the PGC-GR-KO embryo")+   
+  scale_color_manual(values = c("#c0c0ffff","#ffa500ff","forestgreen")) +
+  scale_fill_manual(values = c("#c0c0ffff","#ffa500ff","forestgreen")) +
+  theme(text = element_text(size = 10), axis.title.x = element_text(hjust = 0.26))
+
+
+```
+
+
+
+```{r}
+melt[melt$split == "randomProms",]
+```
+
+## AUC
+here we use all genes e2c up and down
+
+
+```{r}
+set.seed(1234)
+annGR <- readRDS("objects/annGR.rds")
+annGR2 <-keepStandardChromosomes(annGR[annGR$gene_name %in% dea$ID,],pruning.mode = "coarse"); annGR <- dropSeqlevels(annGR,value = c("chrMT","X","Y"),pruning.mode = "coarse") 
+DEA_up <- annGR[annGR$gene_name %in% dea$ID[(dea$FDR < 0.05) & (dea$logFC < 0)] ,]
+DEA_up <- keepStandardChromosomes(DEA_up,pruning.mode = "coarse"); DEA_up <- dropSeqlevels(DEA_up,value = c("chrMT","X","Y"),pruning.mode = "coarse")
+DEA_up <- reduce(DEA_up)
+
+
+
+DEA_down <- annGR[annGR$gene_name %in% dea$ID[(dea$FDR < 0.05) & (dea$logFC > 0)] ,]
+DEA_down <- keepStandardChromosomes(DEA_down,pruning.mode = "coarse"); DEA_down <- dropSeqlevels(DEA_down,value = c("chrMT","X","Y"),pruning.mode = "coarse")  
+DEA_down <- reduce(DEA_down)
+#DEA_down <- sample(DEA_down,size = length(DEA_up))
+
+
+DEA <- unlist(GRangesList(DEA_up,DEA_down))
+
+
+
+# we remove random promoters which have now overlap with any methylData
+annGR2 <- annGR2[overlapsAny(annGR2,unlist(GRangesList(methyl_bed)))]
+
+randDEA <- sample(reduce(annGR2[!overlapsAny(annGR2,DEA),]),length(DEA_up))
+
+DEA2 <- unlist(GRangesList(DEA_up,DEA_down,randDEA))
+
+DEA <- resize(DEA,width = 2,fix = "start")
+DEA2 <- resize(DEA2,width = 2,fix = "start")
+
+
+# sanity check
+#proms <- promoters(ensdb,upstream = 5,downstream = 5)
+
+#overlapsAny(DEA2,proms)
+```
+
+```{r}
+k <- integer(length(DEA2))
+k[1:(length(DEA_up))] <- "PGC-GR-KO\nearlyEmbryo UP"
+k[((length(DEA_up))+1):(length(DEA_up)+length(DEA_down))] <- "PGC-GR-KO\nearlyEmbryo DOWN"
+k[(((length(DEA_up)+length(DEA_down)))+1):length(DEA2)] <- "randomProms"
+```
+
+
+```{r}
+i <- integer(length(DEA))
+i[1:(length(DEA_up))] <- "PGC-GR-KO\nearlyEmbryo UP"
+i[((length(DEA_up))+1):length(DEA)] <- "PGC-GR-KO\nearlyEmbryo DOWN"
+
+```
+
+```{r}
+sm1 <- signal2Matrix(filepaths = methyl_bed,w = 1,regions = DEA,smooth = T,limit = c(0,100),extend = c(500,1500))
+# for proper calculations we ensure to remove regions were smoothing failed
+sm1[is.na(as.data.frame(assay(sm1)))]
+rows_with_na <- apply(as.data.frame(assay(sm1)), 1, function(row) any(is.na(row)))
+sm1_clean <- sm1[!rows_with_na,]
+i_clean <- i[!rows_with_na]
+```
+
+
+```{r}
+plotEnrichedHeatmaps(sm1_clean)
+assay(sm1_clean)
+sm1_clean_merged <- mergeSignalMatrices(sm1_clean)  
+df <- as.data.frame(sm1_clean_merged)
+df <- df[,501:ncol(df)]
+```
+```{r}
+AUC_per_region <- sapply(1:nrow(df),function(row){
+  sm_auc(x =1:length(unlist(c(df[row,]))) , y =unlist(c(df[row,])))
+})
+
+
+mean(AUC_per_region[i_clean == "PGC-GR-KO\nearlyEmbryo DOWN"])/mean(AUC_per_region[i_clean == "PGC-GR-KO\nearlyEmbryo UP"])
+median(AUC_per_region[i_clean == "PGC-GR-KO\nearlyEmbryo DOWN"])/median(AUC_per_region[i_clean == "PGC-GR-KO\nearlyEmbryo UP"])
+```
+```{r}
+library(coin)
+coin_wilcox <- coin::wilcox_test(AUC_per_region ~as.factor(i_clean),distribution=approximate(nresample = 10000))
+  pvalue_wilcox <- pvalue(coin_wilcox)
+  sigma_wilcox <- statistic(coin_wilcox)  
+```
+
+
+```{r}
+melt <- meltSignals(sm1_clean,splitBy = i_clean)
+melt$Group <- melt$split
+
+melt_UP <- melt[melt$split == "PGC-GR-KO\nearlyEmbryo UP",]
+melt_DOWN <- melt[melt$split == "PGC-GR-KO\nearlyEmbryo DOWN",]
+```
+
+```{r}
+mean_data_up <- melt_UP %>%
+  group_by(position) %>%
+  summarize(mean_y = mean(mean))
+
+
+mean_data_down <- melt_DOWN %>%
+  group_by(position) %>%
+  summarize(mean_y = mean(mean))
+
+
+x_min <- 0
+x_max <- 1500
+
+
+
+filtered_data_up <- mean_data_up %>%
+  filter(position >= x_min & position <= x_max)
+filtered_data_down <- mean_data_down %>%
+  filter(position >= x_min & position <= x_max)
+
+```
+
+```{r}
+library(smplot2)
+up_auc <- sm_auc(filtered_data_up$position,filtered_data_up$mean_y)
+
+down_auc <- sm_auc(filtered_data_down$position,filtered_data_down$mean_y)
+
+down_auc/up_auc
+```
+
+
+# Fig S2C - DMRs with GR track
+```{r}
+HyperDMR <- readRDS("objects/hyper_mm39.rds") 
+HypoDMR <- readRDS("objects/hypo_mm39.rds")
+
+DMR <- unlist(GRangesList(HyperDMR,HypoDMR))
+
+
+```
+```{r}
+bw_ChIP <- list.files("intern_data/ChIP/",pattern = "*subtract",full.names = T)
+names(bw_ChIP)<- gsub(x = basename(bw_ChIP),pattern = ".subtract.bw",replacement = "")
+bw_GR <- bw_ChIP[1]
+names(bw_GR) <- "GR"
+bed_GR <- import.bw(bw_GR) 
+```
+
+
+
+```{r}
+
+  sm_GR_5fC <- signal2Matrix(regions = DMR,filepaths = list(GR = bed_GR),type = "scaled")  
+```
+
+```{r}
+plotEnrichedHeatmaps(sm_GR_5fC,row_title = "DMR",scale_title = "GRdensity", color = mako(2000))
+```
+
+# Fig S2E - DEAs PGC-GR-KO early embryo RegionUpset
+```{r}
+df <- read.csv("objects/DEAFDR005-VF-KO.csv", sep = ";")
+# Create a list of vectors, each vector represents a category
+sperm_overlaps <- df$Gene[df$Overlap.sperm.ATAC == 1]
+gre <- df$Gene[df$GRE.in.gene == 1]
+motifs <- df$Gene[df$gene.body.motifs.connected.to.GR == 1]
+
+gene_list <- list(DEGs = df$Gene, "DEGs accesible in Sperm" = sperm_overlaps, "DEGs with GRE motif" = gre, "DEGs with GR binding partner motif" = motifs) 
+```
+
+```{r}
+png(paste0("plots_png/FigS2E.png"),width=8, height=7,res = 300,units = "in")
+regionUpset2(gene_list)
+dev.off()
+
+pdf(paste0("plots_pdf/FigS2E.pdf"), width=8, height=7,colormodel = "cymk")
+regionUpset2(gene_list)
+dev.off()
+
+
+svg(paste0("plots_svg/FigS2E.svg"), width=8, height=7)
+regionUpset2(gene_list)
+dev.off()
+
+```
+
+# Fig S2F - GSEA PGC-GR-KO
+
+```{r}
+deaGO <- function(dea, threshold=0.05, direction=NULL, ontology="BP"){
+  isDE <- dea$adj.P.Val<threshold
+  if(!is.null(direction)) isDE <- isDE & sign(dea$logFC)==sign(direction)
+  isDE <- setNames(factor(as.integer(isDE)),row.names(dea))
+  print(table(isDE))
+  god <- new("topGOdata", ontology=ontology, allGenes=isDE, 
+             nodeSize=10, annot=annFUN.org, 
+             ID="symbol", mapping="org.Mm.eg.db")
+  ea <- runTest(god, algorithm="classic", statistic="fisher")
+  res <- GenTable(god, classicFisher=ea, topNodes=length(god@graph@nodes))
+  res$Term2 <- plgINS::breakStrings(res$Term)
+  res$log2Enrichment <- log2(res$Significant/res$Expected)
+  res$FDR <- p.adjust(res$classicFisher)
+  res
+}
+
+deaGSEA <- function(dea, gsets=NULL){
+  if(is.null(gsets))
+    gsets <- plgINS::getMsigSets("Mus musculus", collections=c("H","C5"))
+  signature <- setNames(sign(dea$logFC)*-log10(dea$P.Value), row.names(dea))
+  fg <- fgseaMultilevel(gsets, signature, minSize=10, nproc=3)
+  fg$genes <- sapply(fg$leadingEdge, collapse=", ", FUN=paste)
+  fg$leadingEdge <- NULL
+  as.data.frame(fg[order(fg$pval),])
+}
+```
+
+```{r}
+se <- readRDS("objects/VF_2cell_embyro_early_paternal_GR_KO(Alpl).SE.rds")
+deas <- getDEA(se)
+dea <- deas$glmFit
+dea$P.Value <- dea$PValue
+
+dea2 <- dea %>% distinct(ID, .keep_all = TRUE)
+rownames(dea2) <- dea2$ID
+
+res2 <- deaGSEA(dea2)
+
+ggplot(head(res2,10), aes(x = reorder(pathway, NES), y = NES, fill = -log10(padj))) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  scale_fill_gradient(low = "grey", high = "orange") +
+  theme_minimal() +
+  labs(
+    title = "Enriched gene sets in \n PGC-GR-KO derived embryos",
+    x = "Gene set",
+    y = "Enrichment Score",
+    fill = "-log10(FDR)"
+  )
+
+ggsave("./plots_svg/GSEA_KO.svg")
+ggsave("./plots_pdf/GSEA_KO.pdf")
+ggsave("./plots_png/GSEA_KO.png")
+```
+
+# Fig S2G - Gene expression of Nr3c1 in early embryo og PGC-GR-KO sperm
+
+```{r}
+se <- readRDS("objects/VF_2cell_embyro_early_paternal_GR_KO(Alpl).SE.rds")
+se$condition <- as.character(se$condition)
+se$condition[se$condition == "Early_GR_KO"] <- "PGC-GR-KO"
+se$condition[se$condition == "Ctrl"] <- "Control"
+se$condition <- as.factor(se$condition)
+```
+
+```{r}
+df <- as.data.frame(cbind(t(assays(se)$logcpm),colData(se))) # we extract data from the SE object and combine it with the colData as a dataframe, this makes it more easy to be accessed by ggplot
+
+colnames(df) <- gsub(x = colnames(df),pattern = "^EN(.*)\\.",replacement = "")
+
+df <- df[,!duplicated(colnames(df))]
+```
+
+```{r}
+p <- ggplot((df), aes(x = condition, y = Nr3c1, color = condition)) +
+  geom_violin(trim = TRUE) +
+  geom_jitter(width = 0.2, size = 1, alpha = 0.5) +
+  theme_minimal() +
+  labs(
+    title = "Gene expression levels of Nr3c1",
+    y = "logcpm",
+    x =""
+  )
+ggsave("plots_svg/FigS2G_Violing_Nr3c1.svg")
+ggsave("plots_pdf/FigS2G_Violing_Nr3c1.pdf")
+ggsave("plots_png/FigS2G_Violing_Nr3c1.png")
+```
+
+
+
+# Fig S2E - Tracks for Rdx and Ptp4a2
+
+```{r}
+png(paste0("plots_png/Fig2G_Rdx.png"), width=750, height=512)
+plotSignalTracks(files = list("PGC-GR-KO"=methyl_bw[c(3,4)],Control =methyl_bw[c(1,2)]),overlay.alpha = 75,region = "9:52011472-52012171",aggregation = "overlay",colors = c("orange","darkgrey"),genomeAxis = T,ensdb = ensdb,extend = c(1000,1000),ylim= c(0,100), fontface.main = 1.4,cex.main = 0.9,cex.id=0.9,cex.title = 0.9) # , rotation.title = 0
+grid.text(paste0("DMR: Rdx"), x = 0.5, y = 0.95, gp = gpar(fontsize = 15, fontface = "bold")) 
+dev.off()
+
+pdf(paste0("plots_pdf/Fig2G_Rdx.pdf"), width=8, height=7,colormodel = "cymk")
+plotSignalTracks(files = list("PGC-GR-KO"=methyl_bw[c(3,4)],Control =methyl_bw[c(1,2)]),overlay.alpha = 75,region = "9:52011472-52012171",aggregation = "overlay",colors = c("orange","darkgrey"),genomeAxis = T,ensdb = ensdb,extend = c(1000,1000),ylim= c(0,100), fontface.main = 1.4,cex.main = 0.9,cex.id=0.9,cex.title = 0.9) # , rotation.title = 0
+grid.text(paste0("DMR: Rdx"), x = 0.5, y = 0.95, gp = gpar(fontsize = 15, fontface = "bold"))
+dev.off()
+
+
+svg(paste0("plots_svg/Fig2G_Rdx.svg"), width=8, height=7)
+plotSignalTracks(files = list("PGC-GR-KO"=methyl_bw[c(3,4)],Control =methyl_bw[c(1,2)]),overlay.alpha = 75,region = "9:52011472-52012171",aggregation = "overlay",colors = c("orange","darkgrey"),genomeAxis = T,ensdb = ensdb,extend = c(1000,1000),ylim= c(0,100), fontface.main = 1.4,cex.main = 0.9,cex.id=0.9,cex.title = 0.9) # , rotation.title = 0
+grid.text(paste0("DMR: Rdx"), x = 0.5, y = 0.95, gp = gpar(fontsize = 15, fontface = "bold"))
+dev.off()
+
+```
+
+
+```{r}
+png(paste0("plots_png/Fig2G_Ptp4a2.png"), width=750, height=512)
+plotSignalTracks(files = list("PGC-GR-KO"=methyl_bw[c(3,4)],Control =methyl_bw[c(1,2)]),overlay.alpha = 75,region = "4: 129711699-129711894",aggregation = "overlay",colors = c("orange","darkgrey"),genomeAxis = T,ensdb = ensdb,extend = c(1000,1000),ylim= c(0,100), fontface.main = 1.4,cex.main = 0.9,cex.id=0.9,cex.title = 0.9) # , rotation.title = 0
+grid.text(paste0("DMR: Ptp4a2"), x = 0.5, y = 0.95, gp = gpar(fontsize = 15, fontface = "bold")) 
+dev.off()
+
+pdf(paste0("plots_pdf/Fig2G_Ptp4a2.pdf"), width=8, height=7,colormodel = "cymk")
+plotSignalTracks(files = list("PGC-GR-KO"=methyl_bw[c(3,4)],Control =methyl_bw[c(1,2)]),overlay.alpha = 75,region = "4: 129711699-129711894",aggregation = "overlay",colors = c("orange","darkgrey"),genomeAxis = T,ensdb = ensdb,extend = c(1000,1000),ylim= c(0,100), fontface.main = 1.4,cex.main = 0.9,cex.id=0.9,cex.title = 0.9) # , rotation.title = 0
+grid.text(paste0("DMR: Ptp4a2"), x = 0.5, y = 0.95, gp = gpar(fontsize = 15, fontface = "bold"))
+dev.off()
+
+
+svg(paste0("plots_svg/Fig2G_Ptp4a2.svg"), width=8, height=7)
+plotSignalTracks(files = list("PGC-GR-KO"=methyl_bw[c(3,4)],Control =methyl_bw[c(1,2)]),overlay.alpha = 75,region = "4: 129711699-129711894",aggregation = "overlay",colors = c("orange","darkgrey"),genomeAxis = T,ensdb = ensdb,extend = c(1000,1000),ylim= c(0,100), fontface.main = 1.4,cex.main = 0.9,cex.id=0.9,cex.title = 0.9) # , rotation.title = 0
+grid.text(paste0("DMR: Ptp4a2"), x = 0.5, y = 0.95, gp = gpar(fontsize = 15, fontface = "bold"))
+dev.off()
+
+```
+# Fig 3A
+
+```{r}
+peak <- import("objects/NFpeaks/embryo_consensus.bed")
+length(peak)
+
+peak_seqs <- memes::get_sequence(peak, genome)
+length(peak_seqs)
+
+ame <- runAme(peak_seqs, database=convert_motifs(motifs), meme_path="/common/meme/bin") #https://meme-suite.org/meme/doc/ame-output-format.html 
+
+ame[1:10]
+```
+
+```{r}
+ame <- readRDS("objects/ame_embryo_consensus.rds")
+ame[1:10]
+gr <- ame[82, , drop=TRUE]
+```
+
+
+```{r}
+ggplot(ame, aes(log2((1+tp)/(1+fp)), -log10(adj.pvalue))) + 
+  geom_point(data=gr, aes(size=tp_percent), color="orange")+
+  geom_text_repel(box.padding=0.5, min.segment.length = 0, max.overlaps = 10,  nudge_y = 0.3, direction = "y", hjust = "right", aes(label=motif_id ), data= gr)+
+  geom_point(aes(size=tp_percent), alpha=0.3) + 
+  geom_text_repel(box.padding=0.5, min.segment.length = 0, max.overlaps = 10,  nudge_y = 0.3, direction = "y", hjust = "right", aes(label=motif_id ), data= head(ame,10))+
+  labs(x="log2(fold-enrichment)", size="% of set")+
+  ylab("-log10 (adjusted p-value)")+
+  xlab("Enrichment")+
+  theme_classic() +
+  ggtitle("Top enriched motifs in the early embryo")+
+  guides(fill = guide_legend(override.aes = aes(color = NA)))
+
+ggsave("./plots_svg/motif_enrichment_embryo_highconfidencepeaks.svg")
+ggsave("./plots_pdf/motif_enrichment_embryo_highconfidencepeaks.pdf")
+ggsave("./plots_png/motif_enrichment_embryo_highconfidencepeaks.png")
+```
+
+
+
+
+# Fig 3B - Clustering GRE peaks
+
+```{r}
+tracks <- c(
+  sperm1="extern_data/ATAC_PRJNA480448_Sperm_GSM3262855.bw",
+  sperm2="extern_data/ATAC_PRJNA480448_Sperm_GSM3262856.bw",
+  sperm3="extern_data//ATAC_PRJNA315208_Sperm_GSM2088377.bw",
+  sperm4="extern_data//ATAC_PRJNA315208_Sperm_GSM2088378.bw",
+  MIIoocyte1="extern_data/ATAC_PRJNA480448_MIIOocyte_GSM3262863.bw",
+  embryoearly2cell="extern_data/ATAC_PRJNA277362_Early2cell_merged.bw",
+  embryo2cell="extern_data/ATAC_PRJNA277362_2cell_merged.bw",
+  embryo4cell="extern_data/ATAC_PRJNA277362_4cell_merged.bw",
+  ESC="extern_data/ATAC_PRJNA277362_ESC_GSM1625858.bw"
+  )
+```
+
+
+
+
+```{r}
+mycolors <- c("1"=brewer.pal(n=20,"Set1")[1], "2"=brewer.pal(n=20,"Set1")[2], "3"=brewer.pal(n=20,"Set1")[3], "4"=brewer.pal(n=20,"Set1")[4], "5"=brewer.pal(n=20,"Set1")[5], "6"=brewer.pal(n=20,"Set1")[6], "7"=brewer.pal(n=20,"Set1")[7], "8"=brewer.pal(n=20,"Set1")[8],
+              "9"=brewer.pal(n=20,"Paired")[1], "10"=brewer.pal(n=20,"Paired")[2], "11"=brewer.pal(n=20,"Paired")[3], "12"=brewer.pal(n=20,"Paired")[4], "13"=brewer.pal(n=20,"Paired")[5], "14"=brewer.pal(n=20,"Paired")[6], "15"=brewer.pal(n=20,"Paired")[7], "16"=brewer.pal(n=20,"Paired")[8], "17"=brewer.pal(n=20,"Paired")[9], "18"=brewer.pal(n=20,"Paired")[10], "19"=brewer.pal(n=20,"Paired")[11])
+
+set.seed(123)
+
+peaks_emb <- readRDS("./objects/peaks_with_GRE_embryo_inAny.rds") 
+peaks_sperm <- readRDS("./objects/narrow_peaks_with_GRE_sperm.rds")
+peaks_oo <- readRDS("./objects/narrow_peaks_with_GRE_mIIoocytes.rds")
+
+length(peaks_emb) #2084
+length(peaks_sperm) #9311
+length(peaks_oo) #792
+
+peaks_emb <- reduce(peaks_emb, with.revmap=TRUE)
+length(peaks_emb)
+peaks_sperm <- reduce(peaks_sperm, with.revmap=TRUE)
+length(peaks_sperm)
+peaks_oo <- reduce(peaks_oo, with.revmap=TRUE)
+length(peaks_oo)
+
+peaklist <- unlist(GRangesList(peaks_emb, peaks_sperm, peaks_oo))
+length(peaklist) #12117
+
+m <- signal2Matrix(tracks, peaklist, w=5, type="center",  BPPARAM = 4)
+m <- epiwraps:::.ese2ml(m)
+
+fused_sperm_mat <- mergeSignalMatrices(m[1:4])
+fused_m <- c(list(sperm=fused_sperm_mat), m[5:9], m[-1:-9])
+fused_n <- renormalizeBorders(lapply(fused_m,log1p))
+
+fused_m <- readRDS("objects/clustering_fused_m.rds")
+fused_n <- readRDS("objects/clustering_fused_n.rds")
+
+cl <- clusterSignalMatrices(fused_n, k=9) #% variance explained by clusters
+ro <- order(rowMeans(fused_n$embryoearly2cell), decreasing = TRUE)
+```
+
+```{r}
+pdf("plots_pdf/GREpeaks_clustering.pdf", width=14.5, height=10)
+x <- plotEnrichedHeatmaps(fused_n, 
+                     row_split = cl,
+                     row_order = ro,
+                     #trim = 0.99, 
+                     raster_resize_mat = FALSE, 
+                     mean_color = mycolors, 
+                     scale_rows = FALSE,
+                     axis_name = c("-2kb","0","+2kb")
+                     )
+print(x)
+dev.off()
+
+
+
+png("plots_pdf/GREpeaks_clustering.png", height=768)
+x <- plotEnrichedHeatmaps(fused_n, 
+                     row_split = cl,
+                     row_order = ro,
+                     #trim = 0.99, 
+                     raster_resize_mat = FALSE, 
+                     mean_color = mycolors, 
+                     scale_rows = FALSE,
+                     axis_name = c("-2kb","0","+2kb")
+                     )
+print(x)
+dev.off()
+```
+
+
+
+# Fig 3C - 2-cell SmartSeq
+
+```{r}
+se <- readRDS("objects/MK_EXP20.1_ProtacEmbryo_merged.SE.rds")
+
+# Generate the dataframes
+dex <- rowData(se)[[4]]
+protac <- rowData(se)[[3]]
+pd <- rowData(se)[[5]]
+
+protac$Gene <- rownames(protac)
+dex$Gene <- rownames(dex)
+pd$Gene <- rownames(pd)
+
+# List of dataframes
+df_list <- list(Dex = dex, "KH-103" = protac, "KH-103+Dex" = pd)
+
+# Function to generate volcano plots
+generate_volcano_plot <- function(df, title) {
+  df$highlight <- df$FDR < 0.1
+  top_genes <- df[order(df$FDR), ][1:10, ]
+  ggplot(df, aes(x=logFC, y=-log10(FDR))) +
+    geom_point(aes(color = highlight)) +
+    scale_color_manual(values = c("TRUE" = "orange", "FALSE" = "black")) +
+    geom_text_repel(data = subset(top_genes, highlight == TRUE), aes(label=Gene), size=3.5, min.segment.length = 0, max.overlaps = Inf, nudge_y = 0.1) +
+    geom_hline(yintercept=-log10(0.05), linetype="dashed")+
+    xlab("logFC") +
+    ylab("-log10(adjusted p-value)") +
+    theme_classic() +
+    theme(legend.position="none") +
+    ggtitle(title)
+}
+
+# Apply the function to each dataframe in the list
+plots <- lapply(names(df_list), function(name) {
+  generate_volcano_plot(df_list[[name]], paste("Differentially expressed genes in 2-cell embryos upon ", name, " treatment"))
+})
+
+print(plots)
+
+print(plots[1])
+  ggsave("plots_svg//DEGs_EXP20-1_Dex_volcano.svg")
+ggsave("plots_pdf/DEGs_EXP20-1_Dex_volcano.pdf")
+ggsave("plots_png/DEGs_EXP20-1_Dex_volcano.png")
+
+print(plots[2])
+ggsave("plots_svg/DEGs_EXP20-1_PROTAC_volcano.svg")
+ggsave("plots_pdf/DEGs_EXP20-1_PROTAC_volcano.pdf")
+ggsave("plots_png/DEGs_EXP20-1_PROTAC_volcano.png")
+
+print(plots[3])
+ggsave("plots_svg/DEGs_EXP20-1_PD_volcano.svg")
+ggsave("plots_pdf/DEGs_EXP20-1_PD_volcano.pdf")
+ggsave("plots_png/DEGs_EXP20-1_PD_volcano.png")
+```
+
+Heatmaps
+```{r}
+se <- readRDS("objects/MK_EXP20.1_ProtacEmbryo_merged.SE.rds")
+se <- se[, se$treatment != "Dex"]
+se <- se[, se$treatment != "PD"]
+
+# Generate the dataframes
+protac <- rowData(se)[[3]]
+protac$Gene <- rownames(protac)
+protacFDR <- subset(protac, protac$FDR <0.1)
+
+treatments <- unique(se$treatment)
+
+# Define own colors
+colors <- c("grey", "orange" )#"800080", "grey", "orange", "black")  
+
+# Make sure the number of colors matches the number of treatments
+if (length(colors) != length(treatments)) {
+  stop("Number of colors must match number of treatments")
+}
+
+# Create a named vector for color mapping
+color_mapping <- setNames(colors, treatments)
+
+# Add color_mapping to the heatmap annotation
+ha = HeatmapAnnotation(df = data.frame(treatment = factor(colData(se)$treatment, levels = names(color_mapping))),
+                       col = list(treatment = color_mapping))
+
+sechm(se, protacFDR, assayName = "log2FC", do.scale = FALSE, top_annotation = ha, row_title="Differentially expressed genes in 2-cell embryos", gaps_at="treatment")
+
+pdf("plots_pdf/DEGs_EXP20-1_PROTAC_heatmap.pdf") #, width=14.5, height=10)
+x <- sechm(se, protacFDR, assayName = "log2FC", do.scale = FALSE, top_annotation = ha, row_title="Differentially expressed genes in 2-cell embryos", gaps_at="treatment")
+print(x)
+dev.off()
+
+png("plots_png/DEGs_EXP20-1_PROTAC_heatmap.png", height=768)
+x <- sechm(se, protacFDR, assayName = "log2FC", do.scale = FALSE, top_annotation = ha, row_title="Differentially expressed genes in 2-cell embryos", gaps_at="treatment")
+print(x)
+dev.off()
+#needs title: KH-103 effects on gene regulation in 2-cell embryos
+```
+
+
+# Fig 3D - 8-cell SmartSeq
+
+```{r}
+se <- readRDS("objects/MK_EXP20.2_ProtacEmbryo8cells.SE.rds")
+
+# Generate the dataframes
+dex <- rowData(se)[[2]]
+protac <- rowData(se)[[3]]
+pd <- rowData(se)[[4]]
+
+protac$Gene <- rownames(protac)
+dex$Gene <- rownames(dex)
+pd$Gene <- rownames(pd)
+
+# List of dataframes
+df_list <- list(Dex = dex, "KH-103" = protac, "KH-103+Dex" = pd)
+
+# Function for volcano plots
+generate_volcano_plot <- function(df, title) {
+  df$highlight <- df$adj.P.Val < 0.1
+  top_genes <- df[order(df$adj.P.Val), ][1:10, ]
+  ggplot(df, aes(x=logFC, y=-log10(adj.P.Val))) +
+    geom_point(aes(color = highlight)) +
+    scale_color_manual(values = c("TRUE" = "orange", "FALSE" = "black")) +
+    geom_text_repel(data = subset(top_genes, highlight == TRUE), aes(label=Gene), size=3.5, min.segment.length = 0, max.overlaps = Inf, nudge_y = 1) +
+    geom_hline(yintercept=-log10(0.05), linetype="dashed")+
+    xlab("logFC") +
+    ylab("-log10(adjusted p-value)") +
+    theme_classic() +
+    theme(legend.position="none") +
+    ggtitle(title)
+}
+
+
+# Apply the function to each dataframe in the list
+plots <- lapply(names(df_list), function(name) {
+  generate_volcano_plot(df_list[[name]], paste("Differentially expressed genes in 8-cell embryos upon ", name, " treatment"))
+})
+print(plots[1])
+ggsave("plots_svg/DEGs_EXP20-2_Dex_volcano.svg")
+  ggsave("plots_pdf/DEGs_EXP20-2_Dex_volcano.pdf")
+ggsave("plots_png/DEGs_EXP20-2_Dex_volcano.png")
+
+print(plots[2])
+ggsave("plots_svg/DEGs_EXP20-2_PROTAC_volcano.svg")
+ggsave("plots_pdf/DEGs_EXP20-2_PROTAC_volcano.pdf")
+ggsave("plots_png/DEGs_EXP20-2_PROTAC_volcano.png")
+
+print(plots[3])
+ggsave("plots_svg/DEGs_EXP20-2_PD_volcano.svg")
+ggsave("plots_pdf/DEGs_EXP20-2_PD_volcano.pdf")
+ggsave("plots_png/DEGs_EXP20-2_PD_volcano.png")
+```
+
+heatmaps
+```{r}
+se <- readRDS("objects/MK_EXP20.2_ProtacEmbryo8cells.SE.rds")
+se <- se[, se$treatment != "DEXR"]
+se <- se[, se$treatment != "DEX"]
+se <- se[, se$treatment != "PDR"]
+se <- se[, se$treatment != "PD"]
+
+# Generate the dataframes
+protac <- rowData(se)[[3]]
+protac$Gene <- rownames(protac)
+protacFDR <- subset(protac, protac$adj.P.Val <0.1)
+
+
+treatments <- unique(se$treatment)
+
+# Define own colors
+colors <- c("#DEDFE4", "darkgrey") # "#919297", "#393A3F",)# , "#800080", "black", "yellow", "orange")#232429"  
+
+# Make sure the number of colors matches the number of treatments
+if (length(colors) != length(treatments)) {
+  stop("Number of colors must match number of treatments")
+}
+
+# Create a named vector for color mapping
+color_mapping <- setNames(colors, treatments)
+
+# Add color_mapping to the heatmap annotation
+ha = HeatmapAnnotation(df = data.frame(treatment = factor(colData(se)$treatment, levels = names(color_mapping))),
+                       col = list(treatment = color_mapping))
+
+color_palette <- colorRampPalette(c("blue", "black", "orange"))(100)
+
+pdf("plots_pdf/DEGs_EXP20-2_PROTAC_heatmap.pdf") #, width=14.5, height=10)
+x <- sechm(se, protacFDR, assayName = "log2FC", do.scale = FALSE, top_annotation = ha, row_title="Differentially expressed genes", gaps_at="treatment", hmcols = color_palette, use_raster = TRUE)
+print(x)
+dev.off()
+
+png("plots_png/DEGs_EXP20-2_PROTAC_heatmap.png", height=768)
+x <- sechm(se, protacFDR, assayName = "log2FC", do.scale = FALSE, top_annotation = ha, row_title="Differentially expressed genes", gaps_at="treatment", hmcols = color_palette, use_raster = TRUE)
+print(x)
+dev.off()
+#needs title : KH-103 effects on gene regulation in 8-cell embryos
+
+svg("plots_svg/DEGs_EXP20-2_PROTAC_heatmap.svg")
+x <- sechm(se, protacFDR, assayName = "log2FC", do.scale = FALSE, top_annotation = ha, row_title="Differentially expressed genes", gaps_at="treatment", hmcols = color_palette, use_raster = TRUE)
+print(x)
+dev.off()
+
+sechm(se, protacFDR, assayName = "log2FC", do.scale = FALSE, top_annotation = ha, row_title="Differentially expressed genes", gaps_at="treatment", hmcols = color_palette, use_raster = TRUE)
+```
+
+
+# Fig 3E - correlation of EXP20.2 target DEGs in 20.1 and Fig S3D - bland-altmann-plot correlation
+
+```{r}
+se <- readRDS("objects/MK_EXP20.1_ProtacEmbryo_merged.SE.rds")
+
+# Generate the dataframes
+dex <- rowData(se)[[4]]
+protac <- rowData(se)[[3]]
+pd <- rowData(se)[[5]]
+dex$Gene <- rownames(dex)
+protac$Gene <- rownames(protac)
+pd$Gene <- rownames(pd)
+
+# Generate dataframes with FDR<0.05 used in this analysis
+dexFDR <- subset(dex, dex$FDR <0.05)
+protacFDR <- subset(protac, protac$FDR <0.05)
+pdFDR <- subset(pd, pd$FDR <0.05)
+dexFDR$Gene <- rownames(dexFDR)
+protacFDR$Gene <- rownames(protacFDR)
+pdFDR$Gene <- rownames(pdFDR)
+
+
+
+# Create a list of dataframes and add column Gene to it
+df_list <- list(dexFDR = dexFDR, protacFDR = protacFDR, pdFDR = pdFDR)
+
+rEXP20_2 <- readRDS("objects/df_list_FDR01.rds")
+rEXP20_2 <- lapply(rEXP20_2, function(df) {
+  df$Gene <- rownames(df)
+  return(df)
+})
+
+# Function to automate the process
+process_dataframes <- function(df_name, df_list, rEXP20_2) {
+  # Get the dataframe from the list
+  df <- df_list[[df_name]]
+  
+  # Construct the variable names
+  FDR_var <- paste0(df_name, "FDR")
+  
+  # Filter the df dataframe to include only the genes that are in rEXP20_2[[FDR_var]]
+  df_filtered <- df[df$Gene %in% rEXP20_2[[FDR_var]]$Gene, ]
+  
+  # Filter rEXP20_2[[FDR_var]] to include only the genes that are in df_filtered
+  rEXP20_2_FDR_filtered <- rEXP20_2[[FDR_var]][rEXP20_2[[FDR_var]]$Gene %in% df_filtered$Gene, ]
+  
+  # Merge the two dataframes on the 'Gene' column
+  merged <- merge(df_filtered, rEXP20_2_FDR_filtered, by = "Gene")
+  
+  # Calculate the correlation of the logFC between the two dataframes
+  correlation <- cor.test(merged$logFC.x, merged$logFC.y)
+  
+  # Print the correlation
+  print(correlation)
+  
+  correlation <- cor(merged$logFC.x, merged$logFC.y)
+  
+  # Create a scatter plot
+  plot <- ggplot(merged, aes(x=logFC.x, y=logFC.y)) +
+    geom_point() +
+    geom_text_repel(aes(label=Gene)) +  # Add the gene names to the plot
+    geom_smooth(method=lm, se=FALSE, color="orange") +
+    annotate("text", x = Inf, y = -Inf, label = paste("Correlation:", round(correlation, 4)), vjust = -1.5, hjust = 1.2) +
+    xlab(paste("logFC in 2-cell embryos")) +
+    ylab(paste("logFC in 8-cell embryos")) +
+    theme_classic() +
+    ggtitle(paste("Correlation of gene expression changes between 2- and 8- cell embryos"))
+  
+  print(plot)
+  ggsave("plots_svg/correlation_EXP20-2_EXP20-1_PROTAC.svg")
+  ggsave("plots_pdf/correlation_EXP20-2_EXP20-1_PROTAC.pdf")
+  ggsave("plots_png/correlation_EXP20-2_EXP20-1_PROTAC.png")
+  
+  
+  # Calculate means and differences
+  merged$mean <- rowMeans(merged[,c("logFC.x", "logFC.y")])
+  merged$difference <- merged$logFC.x - merged$logFC.y
+  
+  # Create a Bland-Altman plot
+  bland_altman_plot <- ggplot(merged, aes(x=mean, y=difference)) +
+    geom_point() +
+    geom_text_repel(aes(label=Gene)) +
+    geom_smooth(method=lm, se=FALSE, color="orange") +
+    xlab(paste("Mean of logFC in 2-cell and 8-cell embryos")) +
+    ylab(paste("Difference of logFC in 2-cell and 8-cell embryos")) +
+    theme_classic() +
+    ggtitle("Correlation of gene expression changes between 2- and 8-cell embryos")
+  
+  print(bland_altman_plot)
+  ggsave("plots_svg/correlationBAP_EXP20-2_EXP20-1_PROTAC.svg")
+  ggsave("plots_pdf/correlationBAP_EXP20-2_EXP20-1_PROTAC.pdf")
+  ggsave("plots_png/correlationBAP_EXP20-2_EXP20-1_PROTAC.png")
+  
+  return(merged)
+}
+
+# Can call this function with the dataframe names and the list of dataframes
+df_names <- c("protac") #, "protac", "pd")
+df_list <- list(protac = protac) #, protac = protac, pd = pd)
+
+# Apply the function to each dataframe
+lapply(df_names, process_dataframes, df_list = df_list, rEXP20_2 = rEXP20_2)
+```
+
+# Fig 3F - regionUpset DEGs in 2cell and 8cell
+
+
+```{r}
+library(UpSetR)
+
+regionUpset2 <- function (x = NULL, genelist = NULL, returnList = FALSE, ...) 
+{
+    if (!is.null(genelist)) {
+        x <- genelist
+    }
+    if (is.character(x)) 
+        x <- as.list(x)
+    stopifnot(length(x) > 1)
+    if (is.list(x)) {
+        if (is.null(names(x)) && all(unlist(lapply(x, is.character))) && 
+            all(lengths(x) == 1)) 
+            names(x) <- unlist(x)
+        if (any(unlist(lapply(x, FUN = function(x) {
+            if (is.character(x)) {
+                if (length(x) != 0) return(TRUE)
+                if (!file.exists(x)) return(TRUE)
+            }
+            FALSE
+        })))) {
+            stop("`x` should be a named list of character vectors.")
+        }
+    }
+    x <- lapply(x, function(x) as.character(x))
+    if (returnList) 
+        return(x)
+    UpSetR::upset(UpSetR::fromList(x), ...)
+}
+```
+
+```{r}
+df <- read.csv("objects/DEAFDR01-EXP20-1-2-PROTAC.csv", sep = ";")
+# Create a list of vectors, each vector represents a category
+sperm_overlaps <- df$Gene[df$Overlap.sperm.ATAC == 1]
+gre <- df$Gene[df$GRE.in.gene == 1]
+motifs <- df$Gene[df$gene.body.motifs.connected.to.GR == 1]
+
+gene_list <- list(DEGs = df$Gene, "DEGs accesible in Sperm" = sperm_overlaps, "DEGs with GRE motif" = gre, "DEGs with GR binding partner motif" = motifs) 
+```
+
+```{r}
+regionUpset2(gene_list)
+```
+
+
+```{r}
+png(paste0("plots_png/Fig3F.png"), width=8, height=7,res = 300,units = "in")
+regionUpset2(gene_list)
+dev.off()
+
+pdf(paste0("plots_pdf/Fig3F.pdf"), width=8, height=7,colormodel = "cymk")
+regionUpset2(gene_list)
+dev.off()
+
+
+svg(paste0("plots_svg/Fig3F.svg"), width=8, height=7)
+regionUpset2(gene_list)
+dev.off()
+
+```
+
+# Fig S3A - GO term analysis embryo peaks with GRE
+
+```{r}
+embryo_consensus_peaks <- readRDS("./objects/peaks_with_GRE_embryo_consensus.rds")
+seqlevelsStyle(embryo_consensus_peaks) <- "UCSC"
+```
+
+Liftover and pruning as GOterm analysis with submitGreatJob can only use mm10 and standard chromosomes
+
+```{bash, eval = FALSE}
+rsync -avzP rsync://hgdownload.soe.ucsc.edu/goldenPath/mm39/liftOver/mm39ToMm10.over.chain.gz -d ../../../tools/liftOver/
+gzip -d ../../../tools/liftOver/mm39ToMm10.over.chain.gz
+```
+
+```{r}
+mm39_mm10_chain <- import.chain("objects/mm39ToMm10.over.chain")
+
+embryo_hc_peaks_mm10 <- liftOver(embryo_consensus_peaks, chain = mm39_mm10_chain)
+embryo_hc_peaks_mm10 <- unlist(embryo_hc_peaks_mm10)
+embryo_hc_peaks_mm10 <- keepStandardChromosomes(embryo_hc_peaks_mm10, pruning.mode = "coarse")
+```
+
+```{r}
+length(embryo_consensus_peaks) #110
+length(embryo_hc_peaks_mm10) #108
+```
+
+```{r, fig.width=10}
+job <- submitGreatJob(embryo_hc_peaks_mm10, species="mm10") 
+res <- getEnrichmentTables(job)
+
+bp <- res$`GO Biological Process`
+head(bp)
+write.table(bp, file = "./objects//GO-analysis_biolprocess_hcembryoGRE.csv")
+
+ggplot(head(bp,20), aes(Hyper_Fold_Enrichment, reorder(name, Hyper_Adjp_BH),  color=-log10(Hyper_Adjp_BH))) + geom_point() + scale_color_viridis_c() + ggtitle("Biological processes in embryo peaks with GRE")
+
+ggsave("./plots_png//GO-term_enrichment_BiologicalProcess_embryo_GREhighconfidencepeaks.png")
+```
+
+# Fig S3B - sperm GRE peaks across embryo tracks
+
+```{r, eval=FALSE}
+tracks_embryos <- c(
+  embryoearly2cell="extern_data/ATAC_PRJNA277362_Early2cell_merged.bw",
+  embryo2cell="extern_data/tracks/ATAC_PRJNA277362_2cell_merged.bw",
+  embryo4cell="extern_data/ATAC_PRJNA277362_4cell_merged.bw",
+  ESC="extern_data/ATAC_PRJNA277362_ESC_GSM1625858.bw")
+
+peaks <- readRDS("./rds_saves/peaks/GRE_peaks/peaks_with_GRE_sperm.rds")
+m <- signal2Matrix(tracks_embryos, peaks, w=20, BPPARAM = 4)
+m <- epiwraps:::.ese2ml(m)
+n <- renormalizeBorders(lapply(m, log1p))
+
+
+pdf("plots_pdf/GREpeaks-sperm-embryotracks.pdf")
+x <- plotEnrichedHeatmaps(n, row_title="Peaks from sperm with GRE", trim = 0.99, raster_resize_mat = TRUE)
+print(x)
+dev.off()
+
+
+png("plots_png/GREpeaks-sperm-embryotracks.png", width=1024, height=768)
+x <- plotEnrichedHeatmaps(n, row_title="Peaks from sperm with GRE", trim = 0.99, raster_resize_mat = TRUE)
+print(x)
+dev.off()
+
+print(x)
+```
+
+
+
+# Fig S3C - GSEA of DEGs 
+
+```{r}
+deaGO <- function(dea, threshold=0.05, direction=NULL, ontology="BP"){
+  isDE <- dea$adj.P.Val<threshold
+  if(!is.null(direction)) isDE <- isDE & sign(dea$logFC)==sign(direction)
+  isDE <- setNames(factor(as.integer(isDE)),row.names(dea))
+  print(table(isDE))
+  god <- new("topGOdata", ontology=ontology, allGenes=isDE, 
+             nodeSize=10, annot=annFUN.org, 
+             ID="symbol", mapping="org.Mm.eg.db")
+  ea <- runTest(god, algorithm="classic", statistic="fisher")
+  res <- GenTable(god, classicFisher=ea, topNodes=length(god@graph@nodes))
+  res$Term2 <- plgINS::breakStrings(res$Term)
+  res$log2Enrichment <- log2(res$Significant/res$Expected)
+  res$FDR <- p.adjust(res$classicFisher)
+  res
+}
+
+deaGSEA <- function(dea, gsets=NULL){
+  if(is.null(gsets))
+    gsets <- plgINS::getMsigSets("Mus musculus", collections=c("H","C5"))
+  signature <- setNames(sign(dea$logFC)*-log10(dea$P.Value), row.names(dea))
+  fg <- fgseaMultilevel(gsets, signature, minSize=10, nproc=3)
+  fg$genes <- sapply(fg$leadingEdge, collapse=", ", FUN=paste)
+  fg$leadingEdge <- NULL
+  as.data.frame(fg[order(fg$pval),])
+}
+```
+
+for 2-cell
+```{r}
+se <- readRDS("objects/MK_EXP20.1_ProtacEmbryo_merged.SE.rds")
+
+deas <- getDEA(se)
+dea <- deas$PROTAC
+```
+```{r, eval=FALSE}
+res2 <- deaGSEA(dea)
+head(res2)
+#write.csv(res2, "./results/GSEA_PROTAC.csv")
+colnames(res2)
+res2
+#saveRDS(res2, "GSEA_2cell.rds")
+```
+```{r}
+res2 <- readRDS("rds_saves/paper/GSEA_2cell.rds")
+generate_volcano_plot <- function(df, title) {
+  df$highlight <- df$padj < 0.05
+  ggplot(df, aes(x=NES, y=-log10(padj))) +
+    geom_point(aes(color = highlight)) +
+    scale_color_manual(values = c("TRUE" = "orange", "FALSE" = "black")) +
+    geom_text_repel(data = subset(df, highlight == TRUE), aes(label=pathway), size=3.5, min.segment.length = 0) +
+    xlab("logFC") +
+    ylab("-log10(adjusted p-value)") +
+    theme_classic() +
+    theme(legend.position="none") +
+    ggtitle(title)
+}
+generate_volcano_plot(res2, "Enriched gene sets in 2-cell embryos upon KH-103 treatment")
+ggsave("plots_svg/GSEA_EXP20-1_PROTAC.svg")
+ggsave("plots_pdf/GSEA_EXP20-1_PROTAC.pdf")
+ggsave("plots_png/GSEA_EXP20-1_PROTAC.png")
+```
+
+alternative plot
+
+```{r}
+ggplot(head(res2,10), aes(x = reorder(pathway, NES), y = NES, fill = -log10(padj))) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  scale_fill_gradient(low = "grey", high = "orange") +
+  theme_minimal() +
+  labs(
+    title = "Gene Ontology Enrichment overall",
+    x = "GO Term",
+    y = "Enrichment Score",
+    fill = "-log10(FDR)"
+  )
+```
+
+for 8-cell
+```{r}
+se <- readRDS("objects/MK_EXP20.2_ProtacEmbryo8cells.SE.rds")
+
+deas <- getDEA(se)
+dea <- deas$PROTAC
+```
+```{r, eval = FALSE}
+res4 <- deaGSEA(dea)
+res4
+
+#saveRDS(res4, "GSEA_8cell.rds")
+```
+```{r}
+res4 <- readRDS("objects/GSEA_8cell.rds")
+generate_volcano_plot <- function(df, title) {
+  df$highlight <- df$padj < 0.05
+  ggplot(df, aes(x=NES, y=-log10(padj))) +
+    geom_point(aes(color = highlight)) +
+    scale_color_manual(values = c("TRUE" = "orange", "FALSE" = "black")) +
+    geom_text_repel(data = subset(df, highlight == TRUE), aes(label=pathway), size=3.5, min.segment.length = 0) +
+    xlab("NES") +
+    ylab("-log10(adjusted p-value)") +
+    theme_classic() +
+    theme(legend.position="none") +
+    ggtitle(title)
+}
+generate_volcano_plot(res4, "Enriched gene sets in 8-cell embryos upon KH-103 treatment")
+ggsave("plots_svg/GSEA_EXP20-2_PROTAC.svg")
+ggsave("plots_pdf/GSEA_EXP20-2_PROTAC.pdf")
+ggsave("plots_png/GSEA_EXP20-2_PROTAC.png")
+```
+
+
+
+# Fig 4E - 2cell Smartseq after Dex treatment in sperm and Fig S4F - 2cell Smartseq after KH-103 treatment in sperm
+
+```{r}
+generate_volcano_plot <- function(df, title) {
+  df$highlight <- df$adj.P.Val < 0.1
+  top_genes <- df[order(df$adj.P.Val), ][1:10, ]
+  ggplot(df, aes(x=logFC, y=-log10(adj.P.Val))) +
+    geom_point(aes(color = highlight)) +
+    scale_color_manual(values = c("TRUE" = "orange", "FALSE" = "black")) +
+    geom_text_repel(data = subset(top_genes, highlight == TRUE), aes(label=Gene), size=3.5, min.segment.length = 0, max.overlaps = Inf, nudge_y = 0.1) +
+    geom_hline(yintercept=-log10(0.05), linetype="dashed")+
+    xlab("logFC") +
+    ylab("-log10(adjusted p-value)") +
+    theme_classic() +
+    theme(legend.position="none") +
+    ggtitle(title)
+}
+
+se <- readRDS("objects/MK_EXP16.4_embryoSeq_spermProtac_merged.SE.rds")
+
+# Generate the dataframes 
+dex <- rowData(se)[[4]]
+protac <- rowData(se)[[3]]
+pd <- rowData(se)[[5]]
+
+protac$Gene <- rownames(protac)
+dex$Gene <- rownames(dex)
+pd$Gene <- rownames(pd)
+
+# List of dataframes
+df_list <- list(Dex = dex, "KH-103" = protac, "KH-103+Dex" = pd)
+
+# Apply the function to each dataframe in the list
+plots <- lapply(names(df_list), function(name) {
+  generate_volcano_plot(df_list[[name]], paste("Differentially expressed genes in 2-cell embryos upon ", name, " treatment in sperm"))
+})
+print(plots[1])
+ggsave("plots_svg/DEGs_EXP16-4_Dex_volcano.svg")
+ggsave("plots_pdf/DEGs_EXP16-4_Dex_volcano.pdf")
+ggsave("plots_png/DEGs_EXP16-4_Dex_volcano.png")
+
+print(plots[2])
+ggsave("plots_svg/DEGs_EXP16-4_PROTAC_volcano.svg")
+ggsave("plots_pdf/DEGs_EXP16-4_PROTAC_volcano.pdf")
+ggsave("plots_png/DEGs_EXP16-4_PROTAC_volcano.png")
+
+print(plots[3])
+ggsave("plots_svg/DEGs_EXP16-4_PD_volcano.svg")
+ggsave("plots_pdf/DEGs_EXP16-4_PD_volcano.pdf")
+ggsave("plots_png/DEGs_EXP16-4_PD_volcano.png")
+```
+
+
+# Fig 4F - Reversal of Dex by KH-103
+
+Can we see reversal for genes not passing significance?
+
+```{r}
+se <- readRDS("objects/MK_EXP16.4_embryoSeq_spermProtac_merged.SE.rds")
+se <- se[, se$treatment != "MED"]
+rescue <- rowData(se)[[6]]
+rescue$Gene <- rownames(rescue)
+
+rescue_sorted <- rescue[order(rescue$adj.P.Val), ]
+rescue_sorted <- rescue_sorted[1:20, ]
+
+treatments <- unique(se$treatment)
+
+# Define your own colors
+colors <- c(brewer.pal(9,"Set2")[3], "grey", "orange", brewer.pal(9,"Set2")[5] )#"#0000FF", "#800080", "grey", "black")  
+
+# Make sure the number of colors matches the number of treatments
+if (length(colors) != length(treatments)) {
+  stop("Number of colors must match number of treatments")
+}
+
+colors <- c("#919297", "#DEDFE4", "darkgrey", "#393A3F")
+# Create a named vector for color mapping
+color_mapping <- setNames(colors, treatments)
+
+# Add color_mapping to the heatmap annotation
+ha = HeatmapAnnotation(df = data.frame(treatment = factor(colData(se)$treatment, levels = names(color_mapping))),
+                       col = list(treatment = color_mapping))
+
+#sechm(se, rescue_sorted, assayName = "log2FC", do.scale = FALSE, top_annotation = ha, row_title="KH103-mediated\nrescue of DEX effect", gaps_at="treatment")
+#needs title: Effects of KH-103 treatment in sperm on gene regulation in 2-cell embryos
+
+
+color_palette <- colorRampPalette(c("blue", "black", "orange"))(10000)
+
+pdf("plots_pdf/DEGs_EXP16-4_rescue_heatmap.pdf", width=6, height=4) #, width=14.5, height=10)
+x <- sechm(se, rescue_sorted, assayName = "log2FC", do.scale = FALSE, top_annotation = ha, row_title="KH103-mediated\nrescue of DEX effect", gaps_at="treatment", hmcols = color_palette, use_raster = TRUE)
+print(x)
+dev.off()
+
+png("plots_png/DEGs_EXP16-4_rescue_heatmap.png")#, height=768)
+x <- sechm(se, rescue_sorted, assayName = "log2FC", do.scale = FALSE, top_annotation = ha, row_title="KH103-mediated\nrescue of DEX effect", gaps_at="treatment", hmcols = color_palette, use_raster = TRUE)
+print(x)
+dev.off()
+
+svg("plots_svg/DEGs_EXP16-4_rescue_heatmap.svg")#, height=768)
+x <- sechm(se, rescue_sorted, assayName = "log2FC", do.scale = FALSE, top_annotation = ha, row_title="KH103-mediated\nrescue of DEX effect", gaps_at="treatment", hmcols = color_palette, use_raster = TRUE)
+print(x)
+dev.off()
+rescue_sorted
+
+sechm(se, rescue_sorted, assayName = "log2FC", do.scale = FALSE, top_annotation = ha, row_title="Differentially expressed genes", gaps_at="treatment", hmcols = color_palette, use_raster = TRUE)
+```
+
+
+#Fig 4G - correlation with PGC-GR-KO
+
+Calculate correaltion and visualize with scatterplot
+
+```{r}
+KO <- readRDS("objects/VF_2cell_embyro_early_paternal_GR_KO(Alpl).SE.rds")
+KO <- rowData(KO)[[2]]
+koFDR <- subset(KO, KO$FDR <0.05)
+koFDR$Gene <- koFDR$ID
+
+
+se <- readRDS("objects/SEs_for_SEV/MK_EXP16.4_embryoSeq_spermProtac_merged.SE.rds")
+protac <- rowData(se)[[3]]
+protac$Gene <- rownames(protac)
+
+
+merged_data <- merge(koFDR, protac, by.x = "ID", by.y = "Gene")
+
+correlation <- cor.test(merged_data$logFC.x, merged_data$logFC.y)
+correlation
+
+# Create a scatter plot to visualize the correlation
+plot <- ggplot(merged_data, aes(x=logFC.x, y=logFC.y)) +
+    geom_point() +
+    geom_text_repel(aes(label=Gene)) +  # Add the gene names to the plot
+    geom_smooth(method=lm, se=FALSE, color="orange") +
+    #annotate("text", x = Inf, y = -Inf, label = paste("Correlation:", correlation)) +#, vjust = -1.5, hjust = 1.2) +
+    xlab(paste("logFC in PGC-GR KO embryos")) +
+    ylab(paste("logFC in embryos from KH-103 treated sperm")) +
+    ggtitle(paste("Correlation of gene expression changes \n between PGC-GR KO embryos and embryos from KH-103 treated sperm"))+
+    theme_classic()
+
+print(plot)
+ggsave("plots_svg/correlation_VF-KO_EXP16-4_PROTAC.svg")
+ggsave("plots_pdf/orrelation_VF-KO_EXP16-4_PROTAC.pdf")
+ggsave("plots_png/correlation_VF-KO_EXP16-4_PROTAC.png")
+```
+
+
+# Fig S4G - tracks accesscible in sperm
+
+```{r}
+gr1 <- txs[txs$gene_name == "1810019D21Rik"]
+gr2 <- txs[txs$gene_name == "Magea14"]
+gr3 <- txs[txs$gene_name == "Gm9895"]
+gr4 <- txs[txs$gene_name == "Zfp472"]
+gr5 <- txs[txs$gene_name == "Cyp4f17"]
+gr5 <- txs[txs$gene_name == "Adamts4"]
+gr6 <- txs[txs$gene_name == "Tmem68"]
+gr7 <- txs[txs$gene_name == "Ptpmt1"]
+gr8 <- txs[txs$gene_name == "Zfp873"] #
+gr9 <- txs[txs$gene_name == "Trib3"] #
+
+ensdb <- ah[["AH89457"]]
+
+txs <- transcripts(ensdb, columns=c("tx_id","tx_biotype","tx_name","gene_id","gene_name"))
+
+tracks <- c(
+  Spermatozoa="extern_data/ATAC_PRJNA315208_Sperm_GSM2088377.bw"
+)
+
+
+plotSignalTracks(tracks, region=gr4[1], ensdb=ensdb, transcripts="full", genomeAxis = TRUE)
+
+plotSignalTracks(tracks, region=gr6[1], ensdb=ensdb, transcripts="full", genomeAxis = TRUE)
+
+plotSignalTracks(tracks, region=gr8[1], ensdb=ensdb, transcripts="full", genomeAxis = TRUE)
+
+gene_symbols <- mapIds(org.Mm.eg.db, keys=tracks$gene_id, column="SYMBOL", keytype="ENSEMBL", multiVals="first")
+tracks$gene_symbol <- gene_symbols
+
+```
+
+```{r}
+pdf("plots_pdf/rescue_tracks.pdf" , width=10, height=5)
+x <- plotSignalTracks(tracks, region=gr8[1], ensdb=ensdb, transcripts="full", genomeAxis = TRUE)
+print(x)
+dev.off()
+
+png("plots_png/rescue_tracks.png", height=768)
+x <- plotSignalTracks(tracks, region=gr8[1], ensdb=ensdb, transcripts="full", genomeAxis = TRUE)
+print(x)
+dev.off()
+```
+
+# Fig S4H - RegionUpset
+```{r}
+df <- read.csv("objects/DEA_rescueDEGs_Fig4_venn_categories.csv", sep = ";")
+# Create a list of vectors, each vector represents a category
+sperm_overlaps <- df$Gene[df$Overlap.sperm.ATAC == 1]
+gre <- df$Gene[df$GRE.in.gene == 1]
+motifs <- df$Gene[df$gene.body.motifs.connected.to.GR == 1]
+
+gene_list <- list(DEGs = df$Gene, "DEGs accesible in Sperm" = sperm_overlaps, "DEGs with GRE motif" = gre, "DEGs with GR binding partner motif" = motifs) 
+```
+
+
+
+
+
+```{r}
+library(UpSetR)
+
+regionUpset2 <- function (x = NULL, genelist = NULL, returnList = FALSE, ...) 
+{
+    if (!is.null(genelist)) {
+        x <- genelist
+    }
+    if (is.character(x)) 
+        x <- as.list(x)
+    stopifnot(length(x) > 1)
+    if (is.list(x)) {
+        if (is.null(names(x)) && all(unlist(lapply(x, is.character))) && 
+            all(lengths(x) == 1)) 
+            names(x) <- unlist(x)
+        if (any(unlist(lapply(x, FUN = function(x) {
+            if (is.character(x)) {
+                if (length(x) != 0) return(TRUE)
+                if (!file.exists(x)) return(TRUE)
+            }
+            FALSE
+        })))) {
+            stop("`x` should be a named list of character vectors.")
+        }
+    }
+    x <- lapply(x, function(x) as.character(x))
+    if (returnList) 
+        return(x)
+    UpSetR::upset(UpSetR::fromList(x), ...)
+}
+```
+
+
+```{r}
+png(paste0("plots_png//Fig4rescue.png"),width=8, height=7,res = 300,units = "in")
+regionUpset2(gene_list)
+dev.off()
+
+pdf(paste0("plots_pdf/Fig4rescue.pdf"), width=8, height=7,colormodel = "cymk")
+regionUpset2(gene_list)
+dev.off()
+
+
+svg(paste0("plots_svg/Fig4rescue.svg"), width=8, height=7)
+regionUpset2(gene_list)
+dev.off()
+
+```
+
+# Fig S4H - 2cell volcano
+
+
+```{r}
+se <- readRDS("objects/MK_EXP20.1_ProtacEmbryo_merged.SE.rds")
+
+# Generate the dataframes
+dex <- rowData(se)[[4]]
+protac <- rowData(se)[[3]]
+pd <- rowData(se)[[5]]
+
+protac$Gene <- rownames(protac)
+dex$Gene <- rownames(dex)
+pd$Gene <- rownames(pd)
+
+# List of dataframes
+df_list <- list(Dex = dex, "KH-103" = protac, "KH-103+Dex" = pd)
+
+# Function to generate volcano plots
+generate_volcano_plot <- function(df, title) {
+  df$highlight <- df$FDR < 0.1
+  top_genes <- df[order(df$FDR), ][1:10, ]
+  ggplot(df, aes(x=logFC, y=-log10(FDR))) +
+    geom_point(aes(color = highlight)) +
+    scale_color_manual(values = c("TRUE" = "orange", "FALSE" = "black")) +
+    geom_text_repel(data = subset(top_genes, highlight == TRUE), aes(label=Gene), size=3.5, min.segment.length = 0, max.overlaps = Inf, nudge_y = 0.1) +
+    geom_hline(yintercept=-log10(0.05), linetype="dashed")+
+    xlab("logFC") +
+    ylab("-log10(adjusted p-value)") +
+    theme_classic() +
+    theme(legend.position="none") +
+    ggtitle(title)
+}
+
+# Apply the function to each dataframe in the list
+plots <- lapply(names(df_list), function(name) {
+  generate_volcano_plot(df_list[[name]], paste("Differentially expressed genes in 2-cell embryos upon ", name, " treatment"))
+})
+
+print(plots)
+
+print(plots[1])
+ggsave("plots_svg/DEGs_EXP20-1_Dex_volcano.svg")
+ggsave("plots_pdf/DEGs_EXP20-1_Dex_volcano.pdf")
+ggsave("plots_png/DEGs_EXP20-1_Dex_volcano.png")
+
+print(plots[2])
+ggsave("plots_svg/DEGs_EXP20-1_PROTAC_volcano.svg")
+ggsave("plots_pdf/DEGs_EXP20-1_PROTAC_volcano.pdf")
+ggsave("plots_png/DEGs_EXP20-1_PROTAC_volcano.png")
+
+print(plots[3])
+ggsave("plots_svg/DEGs_EXP20-1_PD_volcano.svg")
+ggsave("plots_pdf/DEGs_EXP20-1_PD_volcano.pdf")
+ggsave("plots_png/DEGs_EXP20-1_PD_volcano.png")
+```
+
+# Fig 5B Baseline Cort difference
+```{r}
+theme_set(theme_classic())
+```
+
+```{r}
+cort_df <- data.frame(Condition = c(rep("Control",8),rep("Stress",8)),
+           Cort = c(34.83,	41.514,	24.323,	31.654,	27.842,	60.724,	52.208,	53.683,	70.372,	40.766,	36.163,	89.217,	61.647,	42.545,	47.178,	76.72))
+```
+
+```{r,fig.width=5,fig.height=5}
+
+  e <- ggplot(cort_df, aes(x = Condition, y = Cort, fill = Condition))
+
+
+ e2 <- e + geom_boxplot(width = 0.75,outlier.shape = NA ) + 
+   geom_jitter(
+   position=position_jitterdodge(jitter.width = 0.1, dodge.width = 0.75)
+    )+
+   ylab("Cort. [ng/ml]")+
+   xlab("Condition")+
+   ggtitle("Baseline Cort. after Stress")+
+   scale_fill_manual(values=c( "seashell2","#ffa500ff"))+
+   labs(fill= "Condition")+
+   ylim(c(0,100))+
+
+ theme(
+  axis.text.x = element_text(size = 13),
+  text = element_text(size = 14)
+)
+ 
+ 
+ print(e2)
+ 
+ ggsave("plots_png/Fig5B.StressedAnimalsBaselineCort.png")
+  ggsave("plots_pdf/Fig5B.StressedAnimalsBaselineCort.pdf")
+   ggsave("plots_svg/Fig5B.StressedAnimalsBaselineCort.svg")
+
+```
+
+
+
+
+
+
+
+# Fig 5C OFT TIP offspring sep
+```{r}
+report <- read.csv("objects/OFT_Report_offspring.csv")
+rownames(report) <- report$file
+table(is.na(report))
+
+# we convert NAs to zero
+report[is.na(report)] <- 0
+
+meta <- openxlsx::read.xlsx("objects/OFT_metadata_offspring.xlsx")
+rownames(meta) <- meta$OFTfile
+
+# we order meta file according to report and check if TRUE
+meta <- meta[rownames(report),]
+table(rownames(report) == rownames(meta))
+
+# we separate countdata from continues data --> important for downstream analysis
+
+report_count <- report[,grep(x = colnames(report),pattern = "count|trans")]
+report_count <- report_count[,-1]
+report_rest <-  report[,-grep(x = colnames(report),pattern = "count|trans|percentage|raw")]
+report_rest <- report_rest[,c(-1,-2,-which(colnames(report_rest) == "bodycentre.total.time"))]
+
+library(tidyr)
+
+meta <- meta %>%
+  separate(condition, into = c("stress", "treatment"), sep = " ", remove = FALSE)
+
+meta$stress <- as.factor(meta$stress)
+meta$sex <- as.factor(meta$sex)
+meta$treatment <- as.factor(meta$treatment)
+meta$condition <- gsub(x = meta$condition,pattern = " ",replacement = ".")
+```
+
+```{r}
+
+meta$condition <- gsub(x = meta$condition,pattern = " ",replacement = ".")
+# se_count$Group <- relevel(se_count$Group,c("non.stressed.DMSO.f"))
+meta$condition <- factor(meta$condition, levels = c("non.stressed.DMSO", "stressed.DMSO", "non.stressed.PROTAC","stressed.PROTAC"))
+
+df <- cbind(report_rest,report_count,meta)
+
+df$condition
+```
+
+```{r}
+male <- "\u2642"
+print(paste("Male:", male))
+
+
+female <- "\u2640"
+print(paste("Female:", female))
+
+
+e <- ggplot(df, aes(x = df$sex, y = df$bodycentre.periphery.total.time, fill = df$condition))
+
+
+ e2 <- e + geom_boxplot(width = 0.75,outlier.shape = NA ) + 
+   geom_jitter(
+   position=position_jitterdodge(jitter.width = 0.1, dodge.width = 0.75)
+    )+
+
+   ylab("Time [s]")+
+   xlab("Sex")+
+   ggtitle("Time Periphery")+
+
+   scale_fill_manual(values=c( "seashell2","#ffa500ff","seashell4","tomato3"))+
+   labs(fill= "Condition")+
+   scale_x_discrete(labels=c("f"=paste(female), "m"=paste( male)))+
+
+ theme(
+  axis.text.x = element_text(size = 20),
+  text = element_text(size = 14),
+)
+ 
+ 
+ print(e2)
+ 
+  ggsave("plots_svg/Fig5.Offspring.TIP.svg")
+ggsave("plots_pdf/Fig5.Offspring.TIP.pdf")#, width = 6, height = 4)
+ggsave("plots_png/Fig5.Offspring.TIP.png")
+
+```
+
+# Fig 5D OFT offspring distance
+
+```{r}
+
+male <- "\u2642"
+print(paste("Male:", male))
+
+
+female <- "\u2640"
+print(paste("Female:", female))
+
+
+y <- 37.5
+e <- ggplot(df, aes(x = df$sex, y = df$bodycentre.distance.moving, fill = df$condition))
+
+
+ e2 <- e + geom_boxplot(width = 0.75,outlier.shape = NA ) + 
+   geom_jitter(
+   position=position_jitterdodge(jitter.width = 0.1, dodge.width = 0.75)
+    )+
+
+   ylab("Distance [cm]")+
+   xlab("Sex")+
+   ggtitle("Distance Covered")+
+
+   scale_fill_manual(values=c( "seashell2","#ffa500ff","seashell4","tomato3"))+ 
+   labs(fill= "Condition")+
+   scale_x_discrete(labels=c("f"=paste(female), "m"=paste( male)))+
+
+ theme(
+  axis.text.x = element_text(size = 25),
+  text = element_text(size = 14), 
+)
+ 
+ 
+ print(e2)
+ 
+ggsave("plots_svg/Fig5.Offspring.Distance.svg")
+ggsave("plots_pdf/Fig5.Offspring.Distance.pdf")#, width = 6, height = 4)
+ggsave("plots_png/Fig5.Offspring.Distance.png")
+
+
+
+
+```
+
+
+
+
+# Fig 5E UMAP of females offspring of stressed fathers
+```{r}
+set.seed(123)
+i <- 64
+
+#read in US oject
+US <- readRDS("objects/US_object_offspring.rds")
+
+#subset to have only females from IVF cohort
+US <- SplitUSData(us = US,omit = US$file_names[ US$meta$sex == "m" ])
+
+US_f <- US
+
+#read in US oject
+
+US_f <- TwoGroupAnalysis(us = US_f,group = US_f$meta$Stress)
+US_f <- TwoGroupAnalysis_Clusters(us = US_f,group = US_f$meta$Stress)
+
+  # Create the plot
+  x <- Plot2DEmbedding(
+    US_f,
+    reports = US$label_names,
+    colorby = "Group",
+    color = c("seashell3", "#ffa500ff", "seashell4", "tomato3"),
+    plot.sem = TRUE, 
+    seed = 64
+  ) + ggtitle(paste0("Syllable Count CTRL-vs-IFS offspring females"))
+
+  print(x)  
+    
+ggsave("plots_svg/Fig5E.UMAPfemales.svg")
+ggsave("plots_pdf/Fig5E.UMAPfemales.pdf")#, width = 6, height = 4)
+ggsave("plots_png/Fig5E.UMAPfemales.png")
+
+
+```
+
+# Fig 5F Permutation Test female offspring Stress vs Control in DMSO
+
+```{r}
+set.seed(64)
+
+#Histogram for CTRL vs IFS in DMSO group for female offspring
+
+#read in US oject
+US <- readRDS("objects/US_object_offspring.rds")
+
+#subset to have only females from IVF cohort
+US <- SplitUSData(us = US,omit = US$file_names[ US$meta$sex == "m" ])
+
+US_f <- US
+
+#read in US oject
+
+US_f <- SplitUSData(us = US_f,omit = US$file_names[US$meta$Treatment == "PROTAC"])
+US_f <- TwoGroupAnalysis(us = US_f,group = US_f$meta$Stress)
+US_f <- TwoGroupAnalysis_Clusters(us = US_f,group = US_f$meta$Stress,n_bootstraps = 10000)
+
+US_f$meta
+
+  x <- PlotClusterStats(US_f, labels = US_f$label_names)
+  print(x)
+
+ggsave("plots_svg/Fig5F.PermFemalesIFSvsCtrlDMSO.svg")
+ggsave("plots_pdf/Fig5F.PermFemalesIFSvsCtrlDMSO.pdf")#, width = 6, height = 4)
+ggsave("plots_png/Fig5F.PermFemalesIFSvsCtrlDMSO.png")
+
+
+
+```
+
+```{r}
+#read in US oject
+US <- readRDS("US_SF_II_OFTs.rds")
+
+#subset to have only females from IVF cohort
+US <- SplitUSData(us = US,omit = US$file_names[US$meta$generation == "parent" | US$meta$sex == "m" | US$meta$breeding == "natural"])
+#relabel the conditions
+US$meta$condition[US$meta$condition == "non stressed PROTAC"] <- "CTRL PROTAC"
+US$meta$condition[US$meta$condition == "non stressed DMSO"] <- "CTRL DMSO"
+US$meta$condition[US$meta$condition == "stressed PROTAC"] <- "IFS PROTAC"
+US$meta$condition[US$meta$condition == "stressed DMSO"] <- "IFS DMSO"
+
+US$meta <- US$meta[,-14]
+
+US$meta <- US$meta %>%
+  tidyr::separate(condition, into = c("Stress", "Treatment"), sep = " ")
+US$meta$Group <- interaction(US$meta$Stress, US$meta$Treatment)
+US_f <- US
+US_f <- SplitUSData(us = US_f,omit = US$file_names[US$meta$Treatment == "PROTAC"])
+
+US_f <- TwoGroupAnalysis(us = US_f,group = US_f$meta$Stress)
+US_f <- TwoGroupAnalysis_Clusters(us = US_f,group = US_f$meta$Stress)
+
+
+  x <- PlotClusterStats(US_f, labels = US_f$label_names[4])
+  print(x)
+
+
+```
+
+
+# Fig 5G Permutation Test female offspring Stress vs Control in KH-103
+
+
+```{r}
+set.seed(64)
+
+#Histogram for CTRL vs IFS in DMSO group for female offspring
+
+#read in US oject
+US <- readRDS("objects/US_object_offspring.rds")
+
+#subset to have only females from IVF cohort
+US <- SplitUSData(us = US,omit = US$file_names[ US$meta$sex == "m" ])
+
+US_f <- US
+
+#read in US oject
+
+US_f <- SplitUSData(us = US_f,omit = US$file_names[US$meta$Treatment == "DMSO"])
+US_f <- TwoGroupAnalysis(us = US_f,group = US_f$meta$Stress)
+US_f <- TwoGroupAnalysis_Clusters(us = US_f,group = US_f$meta$Stress)
+
+
+
+  x <- PlotClusterStats(US_f, labels = US_f$label_names)
+  print(x)
+
+ggsave("plots_svg/Fig5F.PermFemalesIFSvsCtrlPROTAC.svg")
+ggsave("plots_pdf/Fig5F.PermFemalesIFSvsCtrlPROTAC.pdf")#, width = 6, height = 4)
+ggsave("plots_png/Fig5F.PermFemalesIFSvsCtrlPROTAC.png")
+
+
+
+```
+
+# Fig 5H SPT split by sex
+```{r}
+spt_df <- data.frame(Sex = c(rep("f",13),rep("m",17)),Treatment = c(rep("DMSO",4),rep("PROTAC",2),rep("DMSO",4),rep("PROTAC",3), rep("DMSO",4),rep("PROTAC",4),rep("DMSO",5),rep("PROTAC",4)), Condtion = c(rep("CTRL",6),rep("Stress",7),rep("CTRL",8),rep("Stress",9)),
+           SPT = c(83.21917808,	83.60299445,	83.60299445,	78.0042592, 83.56718834,	84.69643753, 74.65865647,	74.45669291,	76.78244973,	78.59216255,85.25290905,	89.54724409,	78.77526754,87.76315789,	88.15100579,	83.04337172,	82.6875, 83.72475341,	85.91406908,	86.40839041,	79.18757711, 85.33941814,	70.62055591,	78.34249953,	80.44692737,	79.90169306,		75.66512082,	82.14158026,	80.68035944,	76.53459821))
+```
+
+```{r}
+spt_df$Group <- interaction(spt_df$Treatment,spt_df$Condtion)
+```
+
+```{r}
+spt_df$Group <- factor(spt_df$Group, levels = c("DMSO.CTRL", "DMSO.Stress", "PROTAC.CTRL","PROTAC.Stress"))
+```
+
+
+```{r,fig.width= 5,fig.height=4}
+
+# Male symbol
+male <- "\u2642"
+print(paste("Male:", male))
+
+# Female symbol
+female <- "\u2640"
+print(paste("Female:", female))
+
+
+y <- 37.5
+e <- ggplot(spt_df, aes(x = Sex, y = SPT, fill = Group))
+
+
+ e2 <- e + geom_boxplot(width = 0.75,outlier.shape = NA ) + 
+   geom_jitter(
+   position=position_jitterdodge(jitter.width = 0.1, dodge.width = 0.75)
+    )+
+
+   ylab("Overall Saccarine consume [%]")+
+   xlab("Sex")+
+   ggtitle("Saccharine Preference Test")+
+   ylim(c(70,100))+
+
+   scale_fill_manual(values=c( "seashell2","#ffa500ff","seashell4","tomato3"))+
+
+   labs(fill= "")+
+   scale_x_discrete(labels=c("f"=paste(female), "m"=paste( male)))+
+
+ theme(
+  axis.text.x = element_text(size = 25),
+  text = element_text(size = 14),  
+)
+ 
+ 
+ print(e2)
+ 
+ ggsave("plots_png/Fig5H.SPTbySex.png")
+  ggsave("plots_pdf/Fig5H.SPTbySex.pdf")
+   ggsave("plots_svg/Fig5H.SPTbySex.svg")
+
+
+
+```
+
+# Fig 5I Heatmap of differential expressed genes with a counteraction of KH-103 and Stress
+
+
+```{r}
+se <- readRDS("objects/IFS_smartSeq_embryo_salmon.SE.rds")
+meta <- openxlsx::read.xlsx("objects/IFS_smartSeq_embryo_meta.xlsx",colNames = T) 
+meta <- meta[order(meta$Sample),]
+meta <- meta[meta$Sample %in% colnames(se),]
+table(meta$Sample == colnames(se))
+se$embryos <- as.factor(meta$embryos)
+
+Group <- factor(paste(se$treatment,se$condition,sep="."))
+
+
+se$Group <- Group
+
+set.seed(123)
+se$Group2 <- sample(Group,size = 17,replace = F)
+colData(se)
+meta$Sample
+```
+
+```{r}
+set.seed(123)
+se <- SEtools::svacor(se, ~Group+embryos,form0 = ~embryos, n.sv = 3)
+
+```
+
+```{r}
+dds <- calcNormFactors(DGEList(assay(se))) # this calculates Normalization factors according to library sequencing depth, this is important since depth can vary greatly between samples
+
+### lets look at the library size
+dds$samples
+
+
+
+assays(se)$logcpm <- log1p(edgeR::cpm(dds)) # generates the log of Counts-per-million (CPM), this is a very standardized way to normalize data used then for analysis or visualisation
+
+
+
+
+mm <- model.matrix(~0+Group+SV1+SV2+embryos, data=as.data.frame(colData(se))); mm
+
+
+dds <- dds[filterByExpr(dds, group = Group, min.count=20),] # 20 maybe to stringent for embryo data
+dds <- estimateDisp(dds,design = mm)
+se <- se[row.names(dds),]
+
+fit <- glmFit(dds, mm, prior.count = 5) # we us prior.count 5 since we are working with low count data
+```
+Creating contrasts
+```{r}
+fit$design
+
+my.contrast <- makeContrasts(
+  DMSO_IFSvsCTRL = GroupDMSO.IFS - GroupDMSO.CTRL ,
+  PROTAC_IFSvsCTRL = GroupPROTAC.IFS - GroupPROTAC.CTRL,
+  IFS_PROTACvsDMSO = GroupPROTAC.IFS - GroupDMSO.IFS,
+  CTRL_PROTACvsDMSO = GroupPROTAC.CTRL - GroupDMSO.CTRL,
+  IFS_PROTAC_int = ((GroupPROTAC.IFS - GroupPROTAC.CTRL) - (GroupDMSO.IFS - GroupDMSO.CTRL)), # interaction term
+
+  Total_IFSvsCTRL = (GroupDMSO.IFS - GroupDMSO.CTRL + GroupPROTAC.IFS - GroupPROTAC.CTRL)/2,
+  Total_PROTACvsDMSO =  (GroupPROTAC.IFS - GroupDMSO.IFS + GroupPROTAC.CTRL - GroupDMSO.CTRL)/2,
+  levels = mm
+)
+my.contrast  
+
+```
+
+
+```{r}
+Results <- list()
+ 
+for (con in colnames(my.contrast)){
+  Results[[con]] <- as.data.frame(topTags(glmLRT(fit,contrast = my.contrast[,con]),Inf))
+  Results[[con]]$ID <- gsub(x = rownames(Results[[con]]),pattern = "ENS(.*)\\.",replacement = "")
+  Results[[con]]$DEA <- con
+}
+Results
+
+```
+
+```{r}
+RNA_df_Stress_total <- Results$Total_IFSvsCTRL
+
+
+RNA_df_Stress_Protac <- Results$IFS_PROTAC_int
+RNA_df_Stress_Protac <- RNA_df_Stress_Protac[which(RNA_df_Stress_Protac$FDR < 0.05),]
+
+habituation_list <- RNA_df_Stress_total[, c(1, 6)] #get the logFC and ID
+colnames(habituation_list)[1] <- "Stress_coef"
+
+habituation_list$StressProtac_coef <- RNA_df_Stress_Protac[rownames(RNA_df_Stress_total[rownames(RNA_df_Stress_total),]),]$logFC
+habituation_list1 <- habituation_list[which(habituation_list$StressProtac_coef * habituation_list$Stress_coef < 0),]
+```
+
+```{r}
+metadata(se)$anno_colors <- list(condition=c(CTRL="steelblue", IFS ="firebrick3"), treatment =c(PROTAC = "orange", DMSO = "purple4"), Group = c("DMSO.CTRL" = "seashell2","DMSO.IFS" =  "#ffa500ff" , "PROTAC.CTRL" = "seashell4" , "PROTAC.IFS" = "tomato3"))
+
+```
+```{r}
+color_palette <- colorRampPalette(c("blue", "black", "orange"))(101)
+rownames(se) <- gsub(x = rownames(se),pattern = "^ENS(.*)\\.",replacement = "")
+
+
+
+sh <- sechm(se,features = habituation_list1$ID,assayName = "corrected",hmcols = color_palette,do.scale =T,gaps_at = c("treatment"),column_order = colnames(se)[order(colData(se)$condition)],show_rownames = T,name = paste0("Counter.Genes","\nz-score"),top_annotation = c("Group"),use_raster = T,column_title = "Differential gene expression in 2-cell embryos\nupon parternal stress and PROTAC counteraction",column_title_gp = gpar(fontsize = 20)) 
+print(sh)
+
+
+
+pdf("plots_pdf/Fig5I.counteractingProtacGenes.heatmap.pdf", width=14.5, height=10) #, width=14.5, height=10)
+
+print(sh)
+dev.off()
+
+png("plots_png/Fig5I.counteractingProtacGenes.heatmap.png", height=638,width = 872,)
+
+print(sh)
+dev.off()
+
+svg("plots_svg/Fig5I.counteractingProtacGenes.heatmap.svg") #, width=14.5, height=10)
+
+print(sh)
+dev.off()
+
+```
+
+# Fig 5J Differential genes impacted by Stress and KH103 in 2-cell embryo as wel as by Dex in excitatory Neurons in human neural organoids
+
+```{r}
+se <- readRDS("objects/SummarizedExperimentObject_EmbryoFromIFS_Sperm_treatedKH103.SE.rds")
+```
+
+```{r}
+
+df <- as.data.frame(cbind(colData(se),t(assays(se)$corrected)))
+```
+
+"Control" = "#c0c0ffff", "Stress" = "#ffa500ff"
+```{r}
+
+
+
+# Calculate range and breaks
+y_min <- floor(min(df$ENSMUSG00000039114.Nrn1))
+y_max <- ceiling(max(df$ENSMUSG00000039114.Nrn1))
+y_breaks <- seq(y_min, y_max, length.out = 5)
+
+# Round to nearest 0.5
+round_to_half <- function(x) round(x * 2) / 2
+y_breaks <- round_to_half(y_breaks)
+
+# Adjust limits to match rounded breaks
+y_lim <- range(y_breaks)
+
+
+
+e <- ggplot(df, aes(x = Group, y = df$ENSMUSG00000039114.Nrn1, fill = df$Group))
+
+
+ e2 <- e + geom_boxplot(width = 0.75,outlier.shape = NA ) + 
+   geom_jitter(
+   position=position_jitterdodge(jitter.width = 0.1, dodge.width = 0.75)
+    )+
+
+   ylab("Corrected Expression Value")+
+   xlab("Groups")+
+   ggtitle("2Cell Embryo: Nrn1 expression")+
+
+   
+
+scale_y_continuous(breaks = y_breaks, limits = y_lim) +
+
+
+   scale_fill_manual(values=c( "seashell2","#ffa500ff","seashell4","tomato3"))+
+   labs(fill= "Condition")+
+
+ theme(
+  axis.text.x = element_text(size = 9),
+  text = element_text(size = 14), 
+)
+ 
+ 
+ print(e2)
+
+
+ ggsave("plots_png/Fig5J_2CellNrn1.png")
+  ggsave("plots_pdf/Fig5J_2CellNrn1.pdf")
+   ggsave("plots_svg/Fig5J_2CellNrn1.svg")
+```
+```{r}
+e <- ggplot(df, aes(x = Group, y = ENSMUSG00000021214.Akr1c18, fill = df$Group))
+
+
+ e2 <- e + geom_boxplot(width = 0.75,outlier.shape = NA ) + 
+   geom_jitter(
+   position=position_jitterdodge(jitter.width = 0.1, dodge.width = 0.75)
+    )+
+
+   ylab("Corrected Expression Value")+
+   xlab("Groups")+
+   ggtitle("2Cell Embryo: Akr1c18 expression")+
+
+   scale_fill_manual(values=c( "seashell2","#ffa500ff","seashell4","tomato3"))+
+   labs(fill= "Condition")+
+   ylim(c(5.5,10.5))+
+
+ theme(
+  axis.text.x = element_text(size = 9),
+  text = element_text(size = 14), 
+)
+ 
+ 
+ print(e2)
+
+ 
+  ggsave("plots_png/Fig5J_Akr1c18.png")
+  ggsave("plots_pdf/Fig5J_Akr1c18.pdf")
+   ggsave("plots_svg/Fig5J_Akr1c18.svg")
+```
+
+
+
+```{r}
+se <- readRDS("objects//Binder_DexOrganoids_ExInh_Neurons.SE.rds")
+se <- se[,grep(x = colData(se)$treatment,pattern = "Veh-Veh|Veh-Acu")]
+se <- se[,grep(x = colData(se)$celltype,pattern = "Ex.Neurons")]
+se <- se[,grep(x = colData(se)$cellline,pattern = "fok4")]
+
+
+```
+```{r}
+
+
+df <- as.data.frame(cbind(colData(se),t(assays(se)$logcpm)))
+```
+
+
+```{r}
+e <- ggplot(df, aes(x = treatment, y = NRN1, fill = treatment))
+
+
+ e2 <- e + geom_boxplot(width = 0.75,outlier.shape = NA ) + 
+   geom_jitter(
+   position=position_jitterdodge(jitter.width = 0.1, dodge.width = 0.75)
+    )+
+
+   ylab("logcpm")+
+   xlab("Treatment")+
+   ggtitle("Binder.Ex.Neurons: NRN1 expression")+
+
+   scale_fill_manual(values=c( "seashell3","orange3"))+
+   labs(fill= "Treatment")+
+
+ theme(
+  axis.text.x = element_text(size = 11),
+  text = element_text(size = 14),
+)
+ 
+ 
+ print(e2)
+
+  ggsave("plots_png/Fig5J_Nrn1Binder_changedcolor.png")
+  ggsave("plots_pdf/Fig5J_Nrn1Binder_changedcolor.pdf")
+   ggsave("plots_svg/Fig5J_Nrn1Binder_changedcolor.svg")
+
+```
+```{r}
+e <- ggplot(df, aes(x = treatment, y = AKR1C1, fill = treatment))
+
+
+ e2 <- e + geom_boxplot(width = 0.75,outlier.shape = NA ) + 
+   geom_jitter(
+   position=position_jitterdodge(jitter.width = 0.1, dodge.width = 0.75)
+    )+
+
+   ylab("logcpm")+
+   xlab("Treatment")+
+   ggtitle("Binder.Ex.Neurons: AKR1C1 expression")+
+
+   scale_fill_manual(values=c( "seashell3","orange3"))+
+   labs(fill= "Treatment")+
+
+ theme(
+  axis.text.x = element_text(size = 11),
+  text = element_text(size = 14),  
+)
+ 
+ 
+ print(e2)
+
+  ggsave("plots_png/Fig5J_AKR1C1Binder_recolored.png")
+  ggsave("plots_pdf/Fig5J_AKR1C1Binder_recolored.pdf")
+   ggsave("plots_svg/Fig5J_AKR1C1Binder_recolored.svg")
+ 
+```
+
+# Fig S5A
+```{r}
+# load data
+report_tracking <- read.csv("objects/OFT_Report.csv",sep = ";")
+report_tracking <- data.frame(report_tracking)
+
+meta <- openxlsx::read.xlsx("objects/stressed_males_OFT_metadata.xlsx") # check if everything is right
+
+# check if order is right
+report_tracking$file == meta$OFTfile
+
+# if not change order of meta file
+report_tracking$file == meta[order(meta$OFTfile),]$OFTfile
+
+report_tracking$condition <- meta[order(meta$OFTfile),]$condition
+
+#Relabel "IFS" as "Stress"
+
+report_tracking$condition <- factor(report_tracking$condition,
+                                    levels = c("Control", "IFS"),
+                                    labels = c("Control", "Stress"))
+
+
+```
+
+## TIP
+```{r}
+e <- ggplot(report_tracking, aes(x = condition, y = bodycentre.periphery.total.time, fill=condition))
+cols <- c("seashell2", "#ffa500ff")
+
+e2 <- e +
+  geom_boxplot(width = 0.75, outlier.shape = NA) +
+  geom_jitter(position = position_jitterdodge(jitter.width = 0.1), dodge.width = 0.75) +
+  #stat_summary(fun = mean, geom = "point", shape = 4, size = 3, color = "red", fill = "red") +
+  geom_signif(comparisons = list(c("Control", "Stress")), map_signif_level = TRUE) +
+  scale_fill_manual(values = cols) +
+  labs(title = "Time in Periphery") +
+  ylab("Time [s]") +
+  xlab("Condition") +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(size = 20),
+    text = element_text(size = 14)
+  )
+
+print(e2)
+
+
+ggsave("plots_png/FigS5A.TIP.png")
+ggsave("plots_pdf/FigS5A.TIP.pdf")
+ggsave("plots_svg/FigS5A.TIP.svg")
+```
+
+## TtoC
+```{r}
+e <- ggplot(report_tracking, aes(x = condition, y = bodycentre.center.transitions, fill=condition))
+cols <- c("seashell2", "#ffa500ff")
+
+e2 <- e +
+  geom_boxplot(width = 0.75, outlier.shape = NA) +
+  geom_jitter(position = position_jitterdodge(jitter.width = 0.1), dodge.width = 0.75) +
+  #stat_summary(fun = mean, geom = "point", shape = 4, size = 3, color = "red", fill = "red") +
+  geom_signif(comparisons = list(c("Control", "Stress")), map_signif_level = TRUE) +
+  scale_fill_manual(values = cols) +
+  labs(title = "Center Transitions") +
+  ylab("Counts") +
+  xlab("Condition") +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(size = 20),
+    text = element_text(size = 14)
+  )
+
+print(e2)
+
+ggsave("plots_png/FigS5A.Transitions.png")
+ggsave("plots_pdf/FigS5A.Transitions.pdf")
+ggsave("plots_svg/FigS5A.Transitions.svg")
+```
+
+## Distance Covered
+```{r}
+e <- ggplot(report_tracking, aes(x = condition, y = bodycentre.distance.moving, fill=condition))
+cols <- c("seashell2", "#ffa500ff")
+
+e2 <- e +
+  geom_boxplot(width = 0.75, outlier.shape = NA) +
+  geom_jitter(position = position_jitterdodge(jitter.width = 0.1), dodge.width = 0.75) +
+  #stat_summary(fun = mean, geom = "point", shape = 4, size = 3, color = "red", fill = "red") +
+  geom_signif(comparisons = list(c("Control", "Stress")), map_signif_level = TRUE) +
+  scale_fill_manual(values = cols) +
+  labs(title = "Distance covered") +
+  ylab("[cm]") +
+  xlab("Condition") +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(size = 20),
+    text = element_text(size = 14)
+  )
+
+print(e2)
+
+ggsave("plots_png/FigS5A.Distance.png")
+ggsave("plots_pdf/FigS5A.Distance.pdf")
+ggsave("plots_svg/FigS5A.Distance.svg")
+```
+
+# Fig S5B Cluster analysis for stressed animals
+```{r}
+set.seed(123)
+US <- readRDS("objects/US_object_IFS.rds")
+
+US <- TwoGroupAnalysis(US, group = US$meta$Stress)
+US <- TwoGroupAnalysis_Clusters(US, group = US$meta$Stress)
+
+  x <- Plot2DEmbedding(US, report = US$label_names[2], colorby = "Stress", color = c("seashell3", "#ffa500ff"), plot.sem = T)+ ggtitle(paste0("UMAP of IFS animals"))
+
+  print(x)
+  ggsave("plots_pdf/FigS5B_IFS_animals_2D.pdf")
+  ggsave("plots_png/FigS5B_IFS_animals_2D.png")
+  ggsave("plots_svg/FigS5B_IFS_animals_2D.svg")
+
+
+set.seed(123)
+
+  x <- PlotClusterStats(US, labels = US$label_names[2])
+  print(x)
+  ggsave("plots_pdf/FigS5B_IFS_animals_UMAP.pdf")
+  ggsave("plots_png/FigS5B_IFS_animals_UMAP.png")
+  ggsave("plots_svg/FigS5B_IFS_animals_UMAP.svg")
+
+```
+
+
+
+# Fig S5C 
+
+```{r}
+report <- read.csv("objects/OFT_Report_offspring.csv")
+rownames(report) <- report$file
+table(is.na(report))
+
+# we convert NAs to zero
+report[is.na(report)] <- 0
+
+meta <- openxlsx::read.xlsx("objects/OFT_metadata_offspring.xlsx")
+rownames(meta) <- meta$OFTfile
+
+# we order meta file according to report and check if TRUE
+meta <- meta[rownames(report),]
+table(rownames(report) == rownames(meta))
+
+# we separate countdata from continues data --> important for downstream analysis
+
+report_count <- report[,grep(x = colnames(report),pattern = "count|trans")]
+report_count <- report_count[,-1]
+report_rest <-  report[,-grep(x = colnames(report),pattern = "count|trans|percentage|raw")]
+report_rest <- report_rest[,c(-1,-2,-which(colnames(report_rest) == "bodycentre.total.time"))]
+
+library(tidyr)
+
+meta <- meta %>%
+  separate(condition, into = c("stress", "treatment"), sep = " ", remove = FALSE)
+
+meta$stress <- as.factor(meta$stress)
+meta$sex <- as.factor(meta$sex)
+meta$treatment <- as.factor(meta$treatment)
+```
+
+```{r}
+
+meta$condition <- gsub(x = meta$condition,pattern = " ",replacement = ".")
+# se_count$Group <- relevel(se_count$Group,c("non.stressed.DMSO.f"))
+meta$condition <- factor(meta$condition, levels = c("non.stressed.DMSO", "stressed.DMSO", "non.stressed.PROTAC","stressed.PROTAC"))
+
+df <- cbind(report_rest,report_count,meta)
+
+df$condition
+```
+## OFT offspring TIP merge
+```{r}
+
+
+y <- 37.5
+e <- ggplot(df, aes(x = df$condition, y = df$bodycentre.periphery.total.time, fill = df$condition))
+
+
+ e2 <- e + geom_boxplot(width = 0.75,outlier.shape = NA ) + 
+   geom_jitter(
+   position=position_jitterdodge(jitter.width = 0.1, dodge.width = 0.75),
+
+    )+
+
+   ylab("Time [s]")+
+   xlab("Group")+
+   ggtitle("Offspring Time Periphery")+
+
+   scale_fill_manual(values=c( "seashell2","#ffa500ff","seashell4","tomato3"))+
+
+   labs(fill= "Condition")+
+
+ theme(
+  axis.text.x = element_text(size = 8),
+  text = element_text(size = 14),  # Change font size of all text
+
+)
+ 
+ 
+ print(e2)
+ 
+    ggsave("plots_svg/FigS5C.Offspring_merge.TIP.svg")
+ggsave("plots_pdf/FigS5C.Offspring_merge.TIP.pdf")#, width = 6, height = 4)
+ggsave("plots_png/FigS5C.Offspring_merge.TIP.png")
+
+
+```
+
+## OFT offspring Distance merge
+```{r}
+
+
+y <- 37.5
+e <- ggplot(df, aes(x = df$condition, y = df$bodycentre.distance.moving, fill = df$condition))
+
+
+ e2 <- e + geom_boxplot(width = 0.75,outlier.shape = NA ) + 
+   geom_jitter(
+   position=position_jitterdodge(jitter.width = 0.1, dodge.width = 0.75),
+
+    )+
+
+  # ylim(c(0,40))+
+   ylab("Distance [cm]")+
+   xlab("Group")+
+   ggtitle("Offspring Distance Covered")+
+
+   scale_fill_manual(values=c( "seashell2","#ffa500ff","seashell4","tomato3"))+ #c( 
+   labs(fill= "Condition")+
+
+ theme(
+  axis.text.x = element_text(size = 8),
+  text = element_text(size = 14), 
+)
+ 
+ 
+ print(e2)
+ggsave("plots_svg/FigS5C.Offspring_merge.Distance.svg")
+ggsave("plots_pdf/FigS5C.Offspring_merge.Distance.pdf")#, width = 6, height = 4)
+ggsave("plots_png/FigS5C.Offspring_merge.Distance.png")
+  
+
+```
+
+
+# Fig S5D Cluster analysis for male offspring of stressed fathers
+
+
+## UMAP
+
+```{r}
+set.seed(123)
+i <- 64
+
+#read in US oject
+US <- readRDS("objects/US_object_offspring.rds")
+
+#subset to have only females from IVF cohort
+US <- SplitUSData(us = US,omit = US$file_names[ US$meta$sex == "f" ])
+
+US_f <- US
+
+#read in US oject
+
+US_f <- TwoGroupAnalysis(us = US_f,group = US_f$meta$Stress)
+US_f <- TwoGroupAnalysis_Clusters(us = US_f,group = US_f$meta$Stress)
+
+  # Create the plot
+  x <- Plot2DEmbedding(
+    US_f,
+    reports = US$label_names,
+    colorby = "Group",
+    color = c("seashell3", "#ffa500ff", "seashell4", "tomato3"),
+    plot.sem = TRUE, 
+    seed = 64
+  ) + ggtitle(paste0("Syllable Count CTRL-vs-IFS offspring males"))
+
+  print(x)  
+    
+ggsave("plots_svg/FigS5D.UMAPmales.svg")
+ggsave("plots_pdf/FigS5D.UMAPmales.pdf")#, width = 6, height = 4)
+ggsave("plots_png/FigS5D.UMAPmales.png")
+
+
+```
+## Permutation Test Control vs Stress DMSO
+
+
+
+
+```{r}
+set.seed(64)
+
+#Histogram for CTRL vs IFS in DMSO group for male offspring
+
+#read in US oject
+US <- readRDS("objects/US_object_offspring.rds")
+
+#subset to have only females from IVF cohort
+US <- SplitUSData(us = US,omit = US$file_names[ US$meta$sex == "f" ])
+
+US_f <- US
+
+#read in US oject
+
+US_f <- SplitUSData(us = US_f,omit = US$file_names[US$meta$Treatment == "PROTAC"])
+US_f <- TwoGroupAnalysis(us = US_f,group = US_f$meta$Stress)
+US_f <- TwoGroupAnalysis_Clusters(us = US_f,group = US_f$meta$Stress)
+
+
+
+  x <- PlotClusterStats(US_f, labels = US_f$label_names)
+  print(x)
+
+ggsave("plots_svg/FigS5D.PermMalesIFSvsCtrlDMSO.svg")
+ggsave("plots_pdf/FigS5D.PermMalesIFSvsCtrlDMSO.pdf")#, width = 6, height = 4)
+ggsave("plots_png/FigS5D.PermMalesIFSvsCtrlDMSO.png")
+
+
+
+```
+
+## Permutation Test Control vs Stress KH-103
+
+
+
+```{r}
+set.seed(64)
+
+#Histogram for CTRL vs IFS in KH-103 group for male offspring
+
+#read in US oject
+US <- readRDS("objects/US_object_offspring.rds")
+
+#subset to have only females from IVF cohort
+US <- SplitUSData(us = US,omit = US$file_names[ US$meta$sex == "f" ])
+
+US_f <- US
+
+#read in US oject
+
+US_f <- SplitUSData(us = US_f,omit = US$file_names[US$meta$Treatment == "DMSO"])
+US_f <- TwoGroupAnalysis(us = US_f,group = US_f$meta$Stress)
+US_f <- TwoGroupAnalysis_Clusters(us = US_f,group = US_f$meta$Stress)
+
+
+
+  x <- PlotClusterStats(US_f, labels = US_f$label_names)
+  print(x)
+
+ggsave("plots_svg/FigS5D.PermMalesIFSvsCtrlPROTAC.svg")
+ggsave("plots_pdf/FigS5D.PermMalesIFSvsCtrlPROTAC.pdf")#, width = 6, height = 4)
+ggsave("plots_png/FigS5D.PermMalesIFSvsCtrlPROTAC.png")
+
+
+
+```
+
+
+
+# Fig S5E Cluster analysis for male and female offspring of stressed fathers
+
+
+## UMAP
+```{r}
+set.seed(123)
+i <- 64
+
+#read in US oject
+US <- readRDS("objects/US_object_offspring.rds")
+
+US_f <- US
+
+#read in US oject
+
+US_f <- TwoGroupAnalysis(us = US_f,group = US_f$meta$Stress)
+US_f <- TwoGroupAnalysis_Clusters(us = US_f,group = US_f$meta$Stress)
+
+  # Create the plot
+  x <- Plot2DEmbedding(
+    US_f,
+    reports = US$label_names,
+    colorby = "Group",
+    color = c("seashell3", "#ffa500ff", "seashell4", "tomato3"),
+    plot.sem = TRUE, 
+    seed = 64
+  ) + ggtitle(paste0("Syllable Count CTRL-vs-IFS offspring"))
+
+  print(x)  
+    
+ggsave("plots_svg/FigS5E.UMAPfemales+males.svg")
+ggsave("plots_pdf/FigS5E.UMAPfemales+males.pdf")#, width = 6, height = 4)
+ggsave("plots_png/FigS5E.UMAPfemales+males.png")
+
+
+```
+
+## Permutation Test Control vs Stress DMSO
+```{r}
+set.seed(64)
+
+#Histogram for CTRL vs IFS in DMSO group for  offspring
+
+#read in US oject
+US <- readRDS("objects/US_object_offspring.rds")
+
+
+
+US_f <- US
+
+#read in US oject
+
+US_f <- SplitUSData(us = US_f,omit = US$file_names[US$meta$Treatment == "PROTAC"])
+US_f <- TwoGroupAnalysis(us = US_f,group = US_f$meta$Stress)
+US_f <- TwoGroupAnalysis_Clusters(us = US_f,group = US_f$meta$Stress)
+
+
+
+  x <- PlotClusterStats(US_f, labels = US_f$label_names)
+  print(x)
+
+ggsave("plots_svg/FigS5E.PermIFSvsCtrlDMSO.svg")
+ggsave("plots_pdf/FigS5E.PermIFSvsCtrlDMSO.pdf")#, width = 6, height = 4)
+ggsave("plots_png/FigS5E.PermIFSvsCtrlDMSO.png")
+
+
+
+```
+
+## Permutation Test Control vs Stress KH-103
+
+
+
+```{r}
+set.seed(64)
+
+#Histogram for CTRL vs IFS in KH-103 group for male offspring
+
+#read in US oject
+US <- readRDS("objects/US_object_offspring.rds")
+
+
+US_f <- US
+
+#read in US oject
+
+US_f <- SplitUSData(us = US_f,omit = US$file_names[US$meta$Treatment == "DMSO"])
+US_f <- TwoGroupAnalysis(us = US_f,group = US_f$meta$Stress)
+US_f <- TwoGroupAnalysis_Clusters(us = US_f,group = US_f$meta$Stress)
+
+
+
+  x <- PlotClusterStats(US_f, labels = US_f$label_names)
+  print(x)
+
+ggsave("plots_svg/FigS5E.PermIFSvsCtrlPROTAC.svg")
+ggsave("plots_pdf/FigS5E.PermIFSvsCtrlPROTAC.pdf")#, width = 6, height = 4)
+ggsave("plots_png/FigS5E.PermIFSvsCtrlPROTAC.png")
+
+
+
+```
+# Fig S5F SPT no-split
+```{r}
+spt_df <- data.frame(Sex = c(rep("f",13),rep("m",17)),Treatment = c(rep("DMSO",4),rep("PROTAC",2),rep("DMSO",4),rep("PROTAC",3), rep("DMSO",4),rep("PROTAC",4),rep("DMSO",5),rep("PROTAC",4)), Condtion = c(rep("CTRL",6),rep("Stress",7),rep("CTRL",8),rep("Stress",9)),
+           SPT = c(83.21917808,	83.60299445,	83.60299445,	78.0042592, 83.56718834,	84.69643753, 74.65865647,	74.45669291,	76.78244973,	78.59216255,85.25290905,	89.54724409,	78.77526754,87.76315789,	88.15100579,	83.04337172,	82.6875, 83.72475341,	85.91406908,	86.40839041,	79.18757711, 85.33941814,	70.62055591,	78.34249953,	80.44692737,	79.90169306,		75.66512082,	82.14158026,	80.68035944,	76.53459821))
+```
+
+```{r}
+spt_df$Group <- interaction(spt_df$Treatment,spt_df$Condtion)
+```
+
+```{r}
+spt_df$Group <- factor(spt_df$Group, levels = c("DMSO.CTRL", "DMSO.Stress", "PROTAC.CTRL","PROTAC.Stress"))
+```
+```{r}
+## done with wilcox test
+ ## supported rears
+# Male symbol
+male <- "\u2642"
+print(paste("Male:", male))
+
+# Female symbol
+female <- "\u2640"
+print(paste("Female:", female))
+
+
+y <- 37.5
+e <- ggplot(spt_df, aes(x = Group, y = SPT, fill = Group))
+
+
+ e2 <- e + geom_boxplot(width = 0.75,outlier.shape = NA ) + 
+   geom_jitter(
+   position=position_jitterdodge(jitter.width = 0.1, dodge.width = 0.75)
+    )+
+
+   ylab("Overall Saccarine consume [%]")+
+   xlab("Group")+
+   ggtitle("Saccharine Preference Test")+
+   ylim(c(70,100))+
+
+   scale_fill_manual(values=c( "seashell2","#ffa500ff","seashell4","tomato3"))+
+
+   labs(fill= "")+
+   scale_x_discrete(labels=c("f"=paste(female), "m"=paste( male)))+
+
+ theme(
+  axis.text.x = element_text(size = 10),
+  text = element_text(size = 14),  
+)
+ print(e2)
+ 
+
+ 
+ ggsave("plots_png/FigS5F.SPT.png")
+  ggsave("plots_pdf/FigS5F.SPT.pdf")
+   ggsave("plots_svg/FigS5F.SPT.svg")
+
+
+```
+
+
+# Fig S5G Behavior of offspring mice male + female LDB
+```{r}
+report <- read.csv("objects/LDB_Report_offspring.csv",sep = ",")
+rownames(report) <- report$file
+table(is.na(report))
+
+# we convert NAs to zero
+report[is.na(report)] <- 0
+
+meta <- as.data.frame(readxl::read_excel("objects/LDB_metadata_offspring.xlsx"))
+meta$OFTfile <- gsub(x = meta$OFTfile,pattern = ".csv(.*)$",replacement = ".csv")
+row.names(meta) <- meta$OFTfile
+
+# we order meta file according to report and check if TRUE
+meta <- meta[rownames(report),]
+table(rownames(report) == rownames(meta))
+
+# we separate countdata from continues data --> important for downstream analysis
+
+
+
+# we separate countdata from continues data --> important for downstream analysis
+
+report_count <- report[,grep(x = colnames(report),pattern = "count|trans")]
+# we remove non interesting or redundant behaviors
+report_count <- report_count[,c(-2,-4,-5)]
+
+report_rest <-  report[,-grep(x = colnames(report),pattern = "file|count|trans|percentage|raw")]
+
+# we remove non interesting or redundant behaviors
+report_rest <- report_rest[,c(-2,-which(colnames(report_rest) == "bodycentre.total.time"))]
+```
+
+```{r}
+
+meta$condition <- gsub(x = meta$condition,pattern = " ",replacement = ".")
+# se_count$Group <- relevel(se_count$Group,c("non.stressed.DMSO.f"))
+meta$condition <- factor(meta$condition, levels = c("non.stressed.DMSO", "stressed.DMSO", "non.stressed.PROTAC","stressed.PROTAC"))
+
+df <- cbind(report_rest,report_count,meta)
+
+df$condition
+```
+
+## Time in Dark
+
+
+```{r}
+
+e <- ggplot(df, aes(x = df$condition, y = df$bodycentre.dark.total.time, fill = df$condition))
+
+
+ e2 <- e + geom_boxplot(width = 0.75,outlier.shape = NA ) + 
+   geom_jitter(
+   position=position_jitterdodge(jitter.width = 0.1, dodge.width = 0.75)
+    )+
+
+   ylab("Time [s]")+
+   xlab("Group")+
+   ggtitle("Offspring Time in Dark")+
+
+   scale_fill_manual(values=c( "seashell2","#ffa500ff","seashell4","tomato3"))+
+   labs(fill= "Condition")+
+
+ theme(
+  axis.text.x = element_text(size = 8),
+  text = element_text(size = 14), 
+)
+ 
+ 
+ print(e2)
+ggsave("plots_svg/FigS5G.Offspring_merge.TimeInDark.svg")
+ggsave("plots_pdf/FigS5G.Offspring_merge.TimeInDark.pdf")#, width = 6, height = 4)
+ggsave("plots_png/FigS5G.Offspring_merge.TimeInDark.png")
+  
+
+```
+
+## Light to Dark transitions
+```{r}
+
+e <- ggplot(df, aes(x = df$condition, y = df$bodycentre..transitions.light.to.dark, fill = df$condition))
+
+
+ e2 <- e + geom_boxplot(width = 0.75,outlier.shape = NA ) + 
+   geom_jitter(
+   position=position_jitterdodge(jitter.width = 0.1, dodge.width = 0.75)
+    )+
+
+   ylab("Counts")+
+   xlab("Group")+
+   ggtitle("Offspring Light to Dark transitions")+
+
+   scale_fill_manual(values=c( "seashell2","#ffa500ff","seashell4","tomato3"))+
+   labs(fill= "Condition")+
+
+ theme(
+  axis.text.x = element_text(size = 8),
+  text = element_text(size = 14),  
+)
+ 
+ 
+ print(e2)
+ 
+ggsave("plots_svg/FigS5G.Offspring_merge.LightToDark.svg")
+ggsave("plots_pdf/FigS5G.Offspring_merge.LightToDark.pdf")#, width = 6, height = 4)
+ggsave("plots_png/FigS5G.Offspring_merge.LightToDark.png")
+
+```
+## Unsupported Rears
+
+```{r}
+
+
+e <- ggplot(df, aes(x = df$condition, y = df$classifications.UnsupportedRear.count, fill = df$condition))
+
+
+ e2 <- e + geom_boxplot(width = 0.75,outlier.shape = NA ) + 
+   geom_jitter(
+   position=position_jitterdodge(jitter.width = 0.1, dodge.width = 0.75)
+    )+
+
+   ylab("Count")+
+   xlab("Group")+
+   ggtitle("Offspring Unsupported rears")+
+
+   scale_fill_manual(values=c( "seashell2","#ffa500ff","seashell4","tomato3"))+
+   labs(fill= "Condition")+
+
+ theme(
+  axis.text.x = element_text(size = 8),
+  text = element_text(size = 14),
+)
+ 
+ 
+ print(e2)
+ggsave("plots_svg/FigS5G.Offspring_merge.LDBunrear.svg")
+ggsave("plots_pdf/FigS5G.Offspring_merge.LDBunrear.pdf")#, width = 6, height = 4)
+ggsave("plots_png/FigS5G.Offspring_merge.LDBunrear.png")
+
+  
+
+```
+
+# Fig S5H Behavior of offspring mice male + female LDB separated by sex
+## Time in Dark
+```{r}
+
+# Male symbol
+male <- "\u2642"
+print(paste("Male:", male))
+
+# Female symbol
+female <- "\u2640"
+print(paste("Female:", female))
+
+
+y <- 37.5
+e <- ggplot(df, aes(x = df$sex, y = df$bodycentre.dark.total.time, fill = df$condition))
+
+
+ e2 <- e + geom_boxplot(width = 0.75,outlier.shape = NA ) + 
+   geom_jitter(
+   position=position_jitterdodge(jitter.width = 0.1, dodge.width = 0.75)
+    )+
+
+   ylab("Time [s]")+
+   xlab("Sex")+
+   ggtitle("Offspring Time in Dark")+
+
+   scale_fill_manual(values=c( "seashell2","#ffa500ff","seashell4","tomato3"))+ # c( "seashell2","#ffa500ff","seashell4","tomato3")
+   labs(fill= "Condition")+
+   scale_x_discrete(labels=c("f"=paste(female), "m"=paste( male)))+
+
+ theme(
+  axis.text.x = element_text(size = 25),
+  text = element_text(size = 14),  
+)
+ 
+ 
+ print(e2)
+ggsave("plots_svg/FigS5H.Offspring.TimeInDark.svg")
+ggsave("plots_pdf/FigS5H.Offspring.TimeInDark.pdf")#, width = 6, height = 4)
+ggsave("plots_png/FigS5H.Offspring.TimeInDark.png")
+  
+
+```
+## Light to Dark transitions
+
+```{r}
+
+# Male symbol
+male <- "\u2642"
+print(paste("Male:", male))
+
+# Female symbol
+female <- "\u2640"
+print(paste("Female:", female))
+
+
+y <- 37.5
+e <- ggplot(df, aes(x = df$sex, y = df$bodycentre..transitions.light.to.dark, fill = df$condition))
+
+
+ e2 <- e + geom_boxplot(width = 0.75,outlier.shape = NA ) + 
+   geom_jitter(
+   position=position_jitterdodge(jitter.width = 0.1, dodge.width = 0.75)
+    )+
+
+   ylab("Count")+
+   xlab("Sex")+
+   ggtitle("Offspring Light to Dark transitions")+
+
+   scale_fill_manual(values=c( "seashell2","#ffa500ff","seashell4","tomato3"))+ # c( "seashell2","#ffa500ff","seashell4","tomato3")
+   labs(fill= "Condition")+
+   scale_x_discrete(labels=c("f"=paste(female), "m"=paste( male)))+
+
+ theme(
+  axis.text.x = element_text(size = 25),
+  text = element_text(size = 14), 
+)
+ 
+ 
+ print(e2)
+ 
+ggsave("plots_svg/FigS5H.Offspring.LightToDark.svg")
+ggsave("plots_pdf/FigS5H.Offspring.LightToDark.pdf")#, width = 6, height = 4)
+ggsave("plots_png/FigS5H.Offspring.LightToDark.png")
+
+```
+
+## Unsupported Rears
+
+```{r}
+# Male symbol
+male <- "\u2642"
+print(paste("Male:", male))
+
+# Female symbol
+female <- "\u2640"
+print(paste("Female:", female))
+
+
+y <- 37.5
+e <- ggplot(df, aes(x = df$sex, y = df$classifications.UnsupportedRear.count, fill = df$condition))
+
+
+ e2 <- e + geom_boxplot(width = 0.75,outlier.shape = NA ) + 
+   geom_jitter(
+   position=position_jitterdodge(jitter.width = 0.1, dodge.width = 0.75)
+    )+
+
+   ylab("Count")+
+   xlab("Sex")+
+   ggtitle("Offspring Unsupported rears")+
+
+   scale_fill_manual(values=c( "seashell2","#ffa500ff","seashell4","tomato3"))+ # c( "seashell2","#ffa500ff","seashell4","tomato3")
+   labs(fill= "Condition")+
+   scale_x_discrete(labels=c("f"=paste(female), "m"=paste( male)))+
+
+ theme(
+  axis.text.x = element_text(size = 25),
+  text = element_text(size = 14), 
+)
+ 
+ 
+ print(e2)
+ggsave("plots_svg/FigS5H.Offspring_sep.LDBunrear.svg")
+ggsave("plots_pdf/FigS5H.Offspring_sep.LDBunrear.pdf")#, width = 6, height = 4)
+ggsave("plots_png/FigS5H.Offspring_sep.LDBunrear.png")
+  
+
+```
+
+# Fig S5I Heatmap of differential expressed genes in 2-cell embryos by IFS fathers
+```{r}
+se <- log2FC(se, fromAssay = "corrected",controls = se$condition == "CTRL",isLog = F,by = se$treatment)#
+```
+```{r}
+color_palette <- colorRampPalette(c("blue", "black", "orange"))(101)
+rownames(se) <- gsub(x = rownames(se),pattern = "^ENS(.*)\\.",replacement = "")
+
+
+
+sh <- sechm(se,features = Results$Total_IFSvsCTRL$ID[Results$Total_IFSvsCTRL$FDR <0.05],assayName = "scaledLFC",hmcols = color_palette,do.scale =F,gaps_at = c("treatment"),column_order = colnames(se)[order(colData(se)$condition)],show_rownames = F,name = paste0("StressGenes","\nlog2FC"),top_annotation = c("Group"),use_raster = T,column_title = "Stress effect in 2-cell embryos\nupon parternal stress and sperm treatment",column_title_gp = gpar(fontsize = 20)) 
+print(sh)
+
+
+
+pdf("plots_pdf/FigS5I.StressGenes.heatmap.pdf", width=14.5, height=10) #, width=14.5, height=10)
+
+print(sh)
+dev.off()
+
+png("plots_png/FigS5I.StressGenes.heatmap.png", height=516,width = 758,)
+
+print(sh)
+dev.off()
+
+svg("plots_svg/FigS5I.StressGenes.heatmap.svg") #, width=14.5, height=10)
+
+print(sh)
+dev.off()
+
+```
+
+# Fig S5J GO:BP 2-cell embryos of paternal stress
+
+
+
+```{r}
+se <- readRDS("objects/IFS_smartSeq_embryo_salmon.SE.rds")
+meta <- openxlsx::read.xlsx("objects/IFS_smartSeq_embryo_meta.xlsx",colNames = T) 
+meta <- meta[order(meta$Sample),]
+meta <- meta[meta$Sample %in% colnames(se),]
+table(meta$Sample == colnames(se))
+se$embryos <- as.factor(meta$embryos)
+
+Group <- factor(paste(se$treatment,se$condition,sep="."))
+
+
+se$Group <- Group
+
+set.seed(123)
+se$Group2 <- sample(Group,size = 17,replace = F)
+colData(se)
+meta$Sample
+```
+
+```{r}
+set.seed(123)
+se <- SEtools::svacor(se, ~Group+embryos,form0 = ~embryos, n.sv = 3)
+
+```
+
+```{r}
+dds <- calcNormFactors(DGEList(assay(se))) # this calculates Normalization factors according to library sequencing depth, this is important since depth can vary greatly between samples
+
+### lets look at the library size
+dds$samples
+
+
+
+assays(se)$logcpm <- log1p(edgeR::cpm(dds)) # generates the log of Counts-per-million (CPM), this is a very standardized way to normalize data used then for analysis or visualisation
+
+
+
+
+mm <- model.matrix(~0+Group+SV1+SV2+embryos, data=as.data.frame(colData(se))); mm
+
+
+dds <- dds[filterByExpr(dds, group = Group, min.count=20),] # 20 maybe to stringent for embryo data
+dds <- estimateDisp(dds,design = mm)
+se <- se[row.names(dds),]
+
+fit <- glmFit(dds, mm, prior.count = 5) # we us prior.count 5 since we are working with low count data
+```
+Creating contrasts
+```{r}
+fit$design
+
+my.contrast <- makeContrasts(
+  DMSO_IFSvsCTRL = GroupDMSO.IFS - GroupDMSO.CTRL ,
+  PROTAC_IFSvsCTRL = GroupPROTAC.IFS - GroupPROTAC.CTRL,
+  IFS_PROTACvsDMSO = GroupPROTAC.IFS - GroupDMSO.IFS,
+  CTRL_PROTACvsDMSO = GroupPROTAC.CTRL - GroupDMSO.CTRL,
+  IFS_PROTAC_int = ((GroupPROTAC.IFS - GroupPROTAC.CTRL) - (GroupDMSO.IFS - GroupDMSO.CTRL)), # interaction term
+
+  Total_IFSvsCTRL = (GroupDMSO.IFS - GroupDMSO.CTRL + GroupPROTAC.IFS - GroupPROTAC.CTRL)/2,
+  Total_PROTACvsDMSO =  (GroupPROTAC.IFS - GroupDMSO.IFS + GroupPROTAC.CTRL - GroupDMSO.CTRL)/2,
+  levels = mm
+)
+my.contrast  
+
+```
+
+
+```{r}
+Results <- list()
+ 
+for (con in colnames(my.contrast)){
+  Results[[con]] <- as.data.frame(topTags(glmLRT(fit,contrast = my.contrast[,con]),Inf))
+  Results[[con]]$ID <- gsub(x = rownames(Results[[con]]),pattern = "ENS(.*)\\.",replacement = "")
+  Results[[con]]$DEA <- con
+}
+Results
+
+```
+
+
+```{r}
+set.seed(312)
+Results_geo_uni <- list()
+ 
+for (i in 1:length(colnames(my.contrast)[1])){
+  dea <- Results[[i]]  
+  gene_list <- dea[dea$FDR <= 0.05,]$ID # this get us all significantly differential expressed genes
+kegg <- enrichGO(gene          = gene_list,
+                OrgDb         = org.Mm.eg.db,
+                keyType       = "SYMBOL",
+                ont           = "BP",  # BP: Biological Process, MF: Molecular Function, CC: Cellular Component
+                pAdjustMethod = "BH",
+                pvalueCutoff  = 1,
+                qvalueCutoff  = 1,
+                 universe = dea$ID
+                    )
+
+  
+  
+  
+  d <- dotplot(kegg, showCategory=10)
+
+}
+print(d)
+ggsave("plots_svg/FigS5J.2cellGOBPDMSOvsIFS.svg")
+ggsave("plots_pdf/FigS5J.2cellGOBPDMSOvsIFS.pdf")#, width = 6, height = 4)
+ggsave("plots_png/FigS5J.2cellGOBPDMSOvsIFS.png")
+
+```
+
+# Fig S5G GO:BP in excitatory neurons (of a human neural organoid) acutely treated with Dexamethason
+```{r}
+se <- readRDS("objects/Binder_DexOrganoids_ExInh_Neurons.SE.rds")
+gene_lists <- metadata(se)$feature.lists
+```
+
+```{r}
+
+deas <- as.list(rowData(se)[,grepl(x = names(as.list(rowData(se))),pattern = "FOK4_Ex")])
+deas <- lapply(deas,function(x){
+  na.omit(x)
+})
+```
+
+
+```{r}
+library(clusterProfiler)
+
+
+ 
+
+  dea <- deas[[1]]  
+  gene_list <- dea[dea$FDR <= 0.05,]$gene # this get us all significantly differential expressed genes
+kegg <- enrichGO(gene          = gene_list,
+                OrgDb         = org.Hs.eg.db,
+                keyType       = "SYMBOL",
+                ont           = "BP",  # BP: Biological Process, MF: Molecular Function, CC: Cellular Component
+                pAdjustMethod = "BH",
+                pvalueCutoff  = 1,
+                qvalueCutoff  = 1,
+                universe = dea$gene 
+                    )
+
+
+  
+
+d <- dotplot(kegg, showCategory=10)+ggtitle("GO:BP Ex.Neurons Acute Dex Effect")
+print(d)
+
+
+ggsave(paste0("plots_png//FOK4.Ex.Neurons.GOBP.Acute90d.png"))
+
+ggsave(paste0("plots_pdf/FOK4.Ex.Neurons.GOBP.Acute90d.pdf"))
+
+ggsave(paste0("plots_svg/FOK4.Ex.Neurons.GOBP.Acute90d.svg"))
+
+
+
+
+  
+```
+
+```{r}
+sessionInfo()
+```
+
+
+
