@@ -1,2 +1,0 @@
-this folder contains generated/needed object files
-Files missing are Genome fasta files and MK_EXP16.4_embryoSeq_spermProtac_merged.SE.rds due to size
