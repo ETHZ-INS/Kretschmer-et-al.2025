@@ -2,17 +2,31 @@
 title: "Paper-plots"
 author: "Miriam Kretschmer & Vincent Fischer"
 date: "28/05/2026"
-output:
-  bookdown::html_document2:
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    theme: spacelab
     code_folding: hide
-bibliography: citations.bib
-link-citations: yes
+    fig_width: 12
+    df_print: paged
+    number_sections: true
+    
+
 ---
 
+<style type="text/css">
+.main-container {
+  max-width: 85% !important;
+  margin: auto;
+}
+</style>
+
 ```{r setup, include=FALSE}
+library(bookdown)
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 knitr::opts_chunk$set(error = T)
-knitr::opts_knit$set(root.dir = normalizePath("/mnt/gapp/work/vincent/paper/Kretschmer2025/GitHub_submission3"))
+knitr::opts_knit$set(root.dir = normalizePath("/mnt/gapp/work/vincent/paper/Kretschmer2025/GitHub_submission4"))
 ```
 
 ```{r}
@@ -116,9 +130,9 @@ MII oocyte peaks
 ```{r}
 d.oo <- readRDS("objects/motif_enrichment_oocyte_broad.rds")
 
-head(d.oo)
-length(d.oo$motif_id)
-d.oo$motif_id
+# head(d.oo)
+# length(d.oo$motif_id)
+# d.oo$motif_id
 ```
 
 Comparing the enrichments directly, e.g. by merging two data.frames and plotting the log(p) in one vs the other highlighting top 5 for each 
@@ -129,7 +143,7 @@ m.oo.sort <- m[order(m[,2],decreasing = FALSE),]
 m.oo5 <- m.oo.sort[1:5,]
 m.sperm.sort <- m[order(m[,18],decreasing = FALSE),]
 m.sperm5 <- m.sperm.sort[1:5,]
-m
+# m
 ```
 
 ```{r}
@@ -164,7 +178,7 @@ sc_gc <- addGCBias(sc, genome=fa)
 motifs <- do.call(what = "PFMatrixList", lapply(getNonRedundantMotifs(), class="TFBSTools-PFMatrix", FUN= convert_motifs))
 #motifs <- getNonRedundantMotifs()
 motif_ix <- motifmatchr::matchMotifs(motifs, sc_gc, genome=fa)
-motif_ix
+# motif_ix
 dev <- computeDeviations(object=sc_gc, annotations=motif_ix)
 dev$groups <- c("sperm","sperm","MIIoocyte")
 
@@ -230,7 +244,7 @@ m <- signal2Matrix(tracks, GRE_peaks1, w = 20, BPPARAM = 4)
 m <- epiwraps:::.ese2ml(m)
 
 fused_sperm_mat <- mergeSignalMatrices(m[1:2])
-fused_sperm_mat
+# fused_sperm_mat
 
 fused_m <- c(list("Human sperm"=fused_sperm_mat), m[-1:-2])
 
@@ -740,7 +754,7 @@ m.a549.sort <- m[order(m[,2],decreasing = FALSE),]
 m.a5495 <- m.a549.sort[1:3,]
 m.sperm.sort <- m[order(m[,18],decreasing = FALSE),]
 m.sperm5 <- m.sperm.sort[1:3,]
-m
+# m
 
 gr <- m.sperm.sort[2, ]
 stat1 <- m.a549.sort[1, ]
@@ -959,7 +973,7 @@ Met_bed <- sapply(names(bw_mm10),function(names){
 ```{r}
 sm <- signal2Matrix(filepaths = Met_bed,regions = ICR,w =10,type = "scaled",smooth = T,limit = c(0,100))
 plotEnrichedHeatmaps(sm)
-as.data.frame(ICR)
+# as.data.frame(ICR)
 set.seed(123)
 cl <- epiwraps::clusterSignalMatrices(sm,k = 2)
 cl2 <- as.character(cl)
@@ -1063,7 +1077,7 @@ peaks <- readRDS("objects/narrow_peaks_with_GRE_sperm.rds")
 
 ```{r}
 peaks2 <- peaks[overlapsAny(peaks,proms)]
-seqnames(peaks2)
+# seqnames(peaks2)
 peaks2 <- keepStandardChromosomes(peaks2,pruning.mode = "coarse") 
 peaks2 <- dropSeqlevels(peaks2,value = c("MT","Y","X"),pruning.mode = "coarse") 
 ```
@@ -1179,7 +1193,7 @@ annGR <- transcripts(genome,
 
 anno_Stress <- ChIPpeakAnno::annoPeaks(peaks = granges(se),annoData = annGR,bindingType = "fullRange",select = "bestOne")
 
-table(width(peaks)<=500)
+# table(width(peaks)<=500)
 ```
 
 
@@ -1421,11 +1435,11 @@ se <- readRDS("objects/VF_2cell_embyro_early_paternal_GR_KO(Alpl).SE.rds")
 assays(se)
 rowData(se)
 dea <- rowData(se)[[2]]
-dea
+# dea
 
 # Subset differentially expressed genes with FDR < 0.05
 deaFDR <- subset(dea, dea$FDR < 0.05)
-deaFDR
+# deaFDR
 
 # Define treatments and colors
 treatments <- c("ctrl", "Early_GR_KO") # Specify the order explicitly
@@ -1483,7 +1497,7 @@ dea$Gene <- dea$ID
 
 # Subset differentially expressed genes with FDR < 0.05
 deaFDR <- subset(dea, dea$FDR < 0.005)
-deaFDR
+# deaFDR
 
 xlim <- c(-7, 7)
 ylim <- c(0,6)
@@ -1710,7 +1724,7 @@ i_clean <- i[!rows_with_na]
 
 ```{r}
 plotEnrichedHeatmaps(sm1_clean)
-assay(sm1_clean)
+# assay(sm1_clean)
 sm1_clean_merged <- mergeSignalMatrices(sm1_clean)  
 df <- as.data.frame(sm1_clean_merged)
 df <- df[,501:ncol(df)]
@@ -2038,19 +2052,19 @@ dev.off()
 
 ```{r}
 peak <- import("objects/NFpeaks/embryo_consensus.bed")
-length(peak)
+# length(peak)
 
 peak_seqs <- memes::get_sequence(peak, genome)
 length(peak_seqs)
 
 ame <- runAme(peak_seqs, database=convert_motifs(motifs), meme_path="/common/meme/bin") #https://meme-suite.org/meme/doc/ame-output-format.html 
 
-ame[1:10]
+# ame[1:10]
 ```
 
 ```{r}
 ame <- readRDS("objects/ame_embryo_consensus.rds")
-ame[1:10]
+# ame[1:10]
 gr <- ame[82, , drop=TRUE]
 ```
 
@@ -2562,7 +2576,7 @@ job <- submitGreatJob(embryo_hc_peaks_mm10, species="mm10")
 res <- getEnrichmentTables(job)
 
 bp <- res$`GO Biological Process`
-head(bp)
+# head(bp)
 write.table(bp, file = "./objects//GO-analysis_biolprocess_hcembryoGRE.csv")
 
 ggplot(head(bp,20), aes(Hyper_Fold_Enrichment, reorder(name, Hyper_Adjp_BH),  color=-log10(Hyper_Adjp_BH))) + geom_point() + scale_color_viridis_c() + ggtitle("Biological processes in embryo peaks with GRE")
@@ -2691,7 +2705,7 @@ dea <- deas$PROTAC
 ```
 ```{r, eval = FALSE}
 res4 <- deaGSEA(dea)
-res4
+# res4
 
 #saveRDS(res4, "GSEA_8cell.rds")
 ```
@@ -2821,7 +2835,7 @@ svg("plots/Fig4F_DEGs_EXP16-4_rescue_heatmap.svg")#, height=768)
 x <- sechm(se, rescue_sorted, assayName = "log2FC", do.scale = FALSE, top_annotation = ha, row_title="KH103-mediated\nrescue of DEX effect", gaps_at="treatment", hmcols = color_palette, use_raster = TRUE)
 print(x)
 dev.off()
-rescue_sorted
+# rescue_sorted
 
 sechm(se, rescue_sorted, assayName = "log2FC", do.scale = FALSE, top_annotation = ha, row_title="Differentially expressed genes", gaps_at="treatment", hmcols = color_palette, use_raster = TRUE)
 ```
@@ -2947,7 +2961,7 @@ protac$Gene <- rownames(protac)
 merged_data <- merge(koFDR, protac, by.x = "ID", by.y = "Gene")
 
 correlation <- cor.test(merged_data$logFC.x, merged_data$logFC.y)
-correlation
+# correlation
 
 # Create a scatter plot to visualize the correlation
 plot <- ggplot(merged_data, aes(x=logFC.x, y=logFC.y)) +
@@ -3061,6 +3075,43 @@ cort_df <- data.frame(Condition = c(rep("Control",8),rep("Stress",8)),
 ```
 
 
+## 20min after
+
+```{r}
+df <- openxlsx::read.xlsx("objects/PostIFS20min.xlsx")
+df$Condition <- factor(df$Condition,levels = c("CTRL","IFS"),labels = c("Control","Stress"))
+```
+
+```{r,fig.width=5,fig.height=5}
+
+  e <- ggplot(df, aes(x = Condition, y = df$`ng/mL`, fill = Condition))
+
+
+ e2 <- e + geom_boxplot(width = 0.75,outlier.shape = NA ) + 
+   geom_jitter(
+   position=position_jitterdodge(jitter.width = 0.1, dodge.width = 0.75)
+    )+
+    ylab("Corticosterone [ng/ml]")+
+   xlab("Condition")+
+   # ggtitle("Baseline Cort. after Stress")+
+   scale_fill_manual(values=c( "seashell2","#ffa500ff"))+
+   labs(fill= "Condition")+
+    ylim(c(0,200))+
+   theme_classic()+
+
+ theme(
+  # axis.text.x = element_text(size = 13),
+  text = element_text(size = 22)
+)
+ 
+ 
+ print(e2)
+ 
+ # ggsave("plots/Fig5C.StressedAnimalsBaselineCort.png")
+  ggsave("plots/Fig5C.StressedAnimalsBaselineCort20min.pdf")
+    # ggsave("plots/Fig5C.StressedAnimalsBaselineCort.svg")
+
+```
 # Fig 5D GR-ChiP DEA
 ```{r}
 df <- readRDS("objects/GR_ChIP_DEA.DF.rds")
@@ -3144,6 +3195,39 @@ grid.text(paste0("Peak: 11:47531814-47532348","; ","Sgcd"), x = 0.5, y = 0.95, g
 dev.off()
 
 ```
+
+
+## adding GR cut n tag
+```{r}
+
+bw_groups <- list("Sperm\nStress" = bw[c(7:10)], "Sperm\nCtrl" = bw[c(1:4)], "Embryo\nStress" = bw_GR_full[3:4], "Embryo\nCtrl" = bw_GR_full[1:2])
+```
+
+
+
+```{r}
+plotSignalTracks(files = bw_groups,overlay.alpha = 75,region = "11:47531814-47532348",aggregation = "mean",colors = c("steelblue3","blue4","#B83779FF","#FEB27AFF"),genomeAxis = T,ensdb = ensdb,extend = c(2500,2500),ylim= c(0,3), fontface.main = 1,cex.main = 1,cex.id=0.9,cex.title = 0.7) # , rotation.title = 0
+grid.text(paste0("Peak: 11:47531814-47532348","; ","Sgcd"), x = 0.3, y = 0.95, gp = gpar(fontsize = 14, fontface = "bold"))
+```
+```{r}
+png(paste0("plots/Fig5E2_Sgcd.png"), width=750, height=512)
+plotSignalTracks(files = bw_groups[3:4],overlay.alpha = 75,region = "11:47531814-47532348",aggregation = "mean",colors = c("steelblue3","blue4","#B83779FF","#FEB27AFF")[3:4],genomeAxis = T,ensdb = ensdb,extend = c(2500,2500),ylim= c(0,3), fontface.main = 1.4,cex.main = 0.9,cex.id=0.9,cex.title = 0.9) # , rotation.title = 0
+grid.text(paste0("Peak: 11:47531814-47532348","; ","Sgcd"), x = 0.5, y = 0.95, gp = gpar(fontsize = 15, fontface = "bold")) 
+dev.off()
+
+pdf(paste0("plots/Fig5E2_Sgcd.pdf"), width=8, height=7,colormodel = "cymk")
+plotSignalTracks(files = bw_groups[3:4],overlay.alpha = 75,region = "11:47531814-47532348",aggregation = "mean",colors = c("steelblue3","blue4","#B83779FF","#FEB27AFF")[3:4],genomeAxis = T,ensdb = ensdb,extend = c(2500,2500),ylim= c(0,3), fontface.main = 1.4,cex.main = 0.9,cex.id=0.9,cex.title = 0.9) # , rotation.title = 0
+grid.text(paste0("Peak: 11:47531814-47532348","; ","Sgcd"), x = 0.5, y = 0.95, gp = gpar(fontsize = 15, fontface = "bold"))
+dev.off()
+
+
+svg(paste0("plots/Fig5E2_Sgcd.svg"), width=8, height=7)
+plotSignalTracks(files = bw_groups[3:4],overlay.alpha = 75,region = "11:47531814-47532348",aggregation = "mean",colors = c("steelblue3","blue4","#B83779FF","#FEB27AFF")[3:4],genomeAxis = T,ensdb = ensdb,extend = c(2500,2500),ylim= c(0,3), fontface.main = 1.4,cex.main = 0.9,cex.id=0.9,cex.title = 0.9) # , rotation.title = 0
+grid.text(paste0("Peak: 11:47531814-47532348","; ","Sgcd"), x = 0.5, y = 0.95, gp = gpar(fontsize = 15, fontface = "bold"))
+dev.off()
+
+```
+
 # Fig 5F Motif Acitivy with Arche
 ```{r}
 df <- readRDS("objects/GRChIPArche_Results.DF.rds")
@@ -3180,13 +3264,13 @@ ggsave("plots/Fig5F_MotifAct_GRChIP_volcano.pdf")
 ggsave("plots/Fig5F_MotifAct_GRChIP_volcano.png")
 ```
 
+# Fig 5G Signal at GR-CUT&Tag embryo peaks in Sperm-GR and Embryo-H3k4me3
 
-# Fig 5G Heatmap GR-ChIP-Embryo-Oocyte
 ```{r}
 
 tracks_lit <- c(
 
-  MII_oocyte="/mnt/gapp/work/vincent/paper/Kretschmer2025/GitHub_submission2/extern_data/ATAC_PRJNA480448_MIIOocyte_GSM3262863.bw"
+  MII_oocyte="extern_data/ATAC_PRJNA480448_MIIOocyte_GSM3262863.bw"
 )
 length(tracks_lit)
 
@@ -3207,12 +3291,28 @@ GR_bed <- sapply(names(bw),function(names){
 GR_bed <- GR_bed[c(-5,-6)] # we remove input
 
 
+
+
+bw <- list.files(path = "intern_data/CUTNTag_GR/",pattern = "*full.bw$",full.names = T)
+names(bw) <- basename(bw)
+
+bw_groups <- list(Stress = bw[c(3:4)], Ctrl = bw[c(1:2)])
+
+
+
+GR_bed_e2c <- sapply(names(bw),function(names){
+  import.bw(bw[names])
+})
+
+
+
+
 bw_embryoH3K4me3 <- list.files("intern_data/CUTNTag/",pattern = ".bw$",full.names = T)
 names(bw_embryoH3K4me3) <- basename(bw_embryoH3K4me3)
 
 
 
-proms <- granges(readRDS("objects/GRChIP_all_H3k4me3e2c.GR.rds"))
+proms <- granges(readRDS("intern_data/CUTNTag_GR/merge_narrow_threshold_0.05.rds"))
 
 proms <- GenomeInfoDb::keepStandardChromosomes((proms),pruning.mode = "coarse")
 ah <- AnnotationHub()
@@ -3232,6 +3332,15 @@ seqinfo(proms) <- seqinfo(ensdb)
   
   # make sure to only take rows were we have the necessary information in 5mC
   
+  sm_GR_e2c <-  signal2Matrix(filepaths = GR_bed_e2c,regions = proms,w = 20L,smooth = T, background= 0) #,smooth = T, background= 0
+  sm_merge_GR_IFS_e2c <- mergeSignalMatrices(epiwraps:::.ese2ml(sm_GR_e2c)[c(1:2)])
+ # make sure to only take rows were we have the necessary information in 5mC
+  
+  sm_merge_GR_Ctrl_e2c <- mergeSignalMatrices(epiwraps:::.ese2ml(sm_GR_e2c)[c(3:4)])
+  
+  
+  
+  
   sm <- signal2Matrix(w = 20L, filepaths = tracks_lit,regions = proms)
 
 
@@ -3244,34 +3353,39 @@ seqinfo(proms) <- seqinfo(ensdb)
 
   
   # order overall
-  pOverall <- plotEnrichedHeatmaps(list(GR_Ctrl = sm_merge_GR_Ctrl,GR_IFS = sm_merge_GR_IFS,H3K4me3EmbryoCtrl = sm_merge_embryoCtrl,H3K4me3EmbryoIFS = sm_merge_embryoIFS),multiScale = T)
+  pOverall <- plotEnrichedHeatmaps(list(GR_Ctrl = sm_merge_GR_Ctrl,GR_IFS = sm_merge_GR_IFS,H3K4me3EmbryoCtrl = sm_merge_embryoCtrl,H3K4me3EmbryoIFS = sm_merge_embryoIFS, GREmbryoCtrl = sm_merge_GR_Ctrl,GREmbryoIFS =sm_merge_GR_IFS),multiScale = T)
   ro_Overall <- pOverall@ht_list[[1]]@row_order
   
   
   # plot with order of Overall
-  p <- plotEnrichedHeatmaps(list(GR_Ctrl = sm_merge_GR_Ctrl,GR_IFS = sm_merge_GR_IFS),use_raster = T,row_title = paste0("Overlap GR-ChIP and H3K4me3 early embryo") ,scale_title = "GR\ndesnity",colors = mako(2000),mean_scale_side = "none", trim = c(0.02,0.98),axis_name = c("-2kb","Center","+2kb"),row_order = ro_Overall,heatmap_legend_param = list(legend_direction = "horizontal", legend_width = unit(0.28, "npc"), title=NULL)) +
-    plotEnrichedHeatmaps(ml = list(H3K4me3EmbryoCtrl = sm_merge_embryoCtrl,H3K4me3EmbryoIFS = sm_merge_embryoIFS),use_raster = T,row_title = paste0("Overlap GR-ChIP and H3K4me3 early embryo") ,scale_title = "Embryo\ndensity",colors = colorRampPalette(c("#000000","#00A97A","#00FF7F"))(2000),mean_scale_side = "none",axis_name = c("-2kb","Center","+2kb"),row_order = ro_Overall, heatmap_legend_param = list(legend_direction = "horizontal", legend_width = unit(0.28, "npc"), title=NULL),scale_rows = FALSE)+
-    plotEnrichedHeatmaps(ml = sm_Oocyte,use_raster = T,row_title = paste0("Overlap GR-ChIP and H3K4me3 early embryo") ,scale_title = "Oocyte\ndensity",colors = colorRampPalette(c("#000000","firebrick1"))(2000),mean_scale_side = "none",axis_name = c("-2kb","Center","+2kb"),row_order = ro_Overall, heatmap_legend_param = list(legend_direction = "horizontal", legend_width = unit(0.28, "npc"), title=NULL),scale_rows = FALSE)
+  p <- plotEnrichedHeatmaps(scale_rows = F,list(GR_Ctrl = sm_merge_GR_Ctrl,GR_IFS = sm_merge_GR_IFS),use_raster = T,row_title = paste0("GR occupying sites in 2-cell Embryo") ,scale_title = "GR\nsperm\ndesnity",colors = mako(2000),mean_scale_side = "none", trim = c(0.1,0.95),axis_name = c("-2kb","Center","+2kb"),row_order = ro_Overall,heatmap_legend_param = list(legend_direction = "horizontal", legend_width = unit(0.28, "npc"), title=NULL)) +
+    
+    plotEnrichedHeatmaps(scale_rows = F,list(GR_Ctrl_e2c = sm_merge_GR_Ctrl_e2c,GR_IFS_e2c = sm_merge_GR_IFS_e2c),use_raster = T,row_title = paste0("GR occupying sites in 2-cell Embryo") ,scale_title = "GR\ne2c\ndesnity",colors = magma(2000),mean_scale_side = "none", trim = c(0.1,0.95),axis_name = c("-2kb","Center","+2kb"),row_order = ro_Overall,heatmap_legend_param = list(legend_direction = "horizontal", legend_width = unit(0.28, "npc"), title=NULL)) +
+    
+    plotEnrichedHeatmaps(scale_rows = F,ml = list(H3K4me3EmbryoCtrl = sm_merge_embryoCtrl,H3K4me3EmbryoIFS = sm_merge_embryoIFS),use_raster = T,row_title = paste0("GR occupying sites in 2-cell Embryo") ,scale_title = "Embryo\ndensity",colors = colorRampPalette(c("#000000","#00A97A","#00FF7F"))(2000),mean_scale_side = "none", trim = c(0.1,0.95),axis_name = c("-2kb","Center","+2kb"),row_order = ro_Overall, heatmap_legend_param = list(legend_direction = "horizontal", legend_width = unit(0.28, "npc"), title=NULL))+
+    plotEnrichedHeatmaps(scale_rows = F,ml = sm_Oocyte,use_raster = T,row_title = paste0("GR occupying sites in 2-cell Embryo") ,scale_title = "Oocyte\ndensity",colors = colorRampPalette(c("#000000","firebrick1"))(2000),mean_scale_side = "none",axis_name = c("-2kb","Center","+2kb"),row_order = ro_Overall, heatmap_legend_param = list(legend_direction = "horizontal", legend_width = unit(0.28, "npc"), title=NULL))
   
     
   
   print(p)
   
   
-  png(paste0("plots/","Fig5G_Heatmap_GRChIP_H3k4me3",".png"), width=1250, height=768)
+  png(paste0("plots/","Fig5G_Heatmap_GRCnT",".png"), width=1500, height=768)
   draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
   dev.off()
   
-  pdf(paste0("plots/","Fig5G_Heatmap_GRChIP_H3k4me3",".pdf"), width=10, height=10)
+  pdf(paste0("plots/","Fig5G_Heatmap_GRCnT",".pdf"), width=12.5, height=10)
   draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
   dev.off()
   
-  svg(paste0("plots/","Fig5G_Heatmap_GRChIP_H3k4me3",".svg"), width=10, height=10)
+  svg(paste0("plots/","Fig5G_Heatmap_GRCnT","svg"), width=12.5, height=10)
   draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
   dev.off()
-
+  
+  
 
 ```
+
 
 
 # Fig 5H Protac effect on long RNA
@@ -3427,7 +3541,7 @@ se <- SEtools::svacor(se, ~Group+embryos,form0 = ~embryos, n.sv = 3)
 dds <- calcNormFactors(DGEList(assay(se))) # this calculates Normalization factors according to library sequencing depth, this is important since depth can vary greatly between samples
 
 ### lets look at the library size
-dds$samples
+# dds$samples
 
 
 
@@ -3473,13 +3587,13 @@ for (con in colnames(my.contrast)){
   Results[[con]]$ID <- gsub(x = rownames(Results[[con]]),pattern = "ENS(.*)\\.",replacement = "")
   Results[[con]]$DEA <- con
 }
-Results
+# Results
 
 ```
 
 ```{r}
+# Results$Total_PROTACvsDMSO
 RNA_df_Stress_total <- Results$Total_IFSvsCTRL
-
 
 RNA_df_Stress_Protac <- Results$IFS_PROTAC_int
 RNA_df_Stress_Protac <- RNA_df_Stress_Protac[which(RNA_df_Stress_Protac$FDR < 0.05),]
@@ -3490,6 +3604,10 @@ colnames(habituation_list)[1] <- "Stress_coef"
 habituation_list$StressProtac_coef <- RNA_df_Stress_Protac[rownames(RNA_df_Stress_total[rownames(RNA_df_Stress_total),]),]$logFC
 habituation_list1 <- habituation_list[which(habituation_list$StressProtac_coef * habituation_list$Stress_coef < 0),]
 ```
+
+
+
+
 
 ```{r}
 metadata(se)$anno_colors <- list(condition=c(CTRL="steelblue", IFS ="firebrick3"), treatment =c(PROTAC = "orange", DMSO = "purple4"), Group = c("DMSO.CTRL" = "seashell2","DMSO.IFS" =  "#ffa500ff" , "PROTAC.CTRL" = "seashell4" , "PROTAC.IFS" = "tomato3"))
@@ -3597,7 +3715,7 @@ se <- se[,grep(x = colData(se)$celltype,pattern = "Ex.Neurons")]
 se <- se[,grep(x = colData(se)$cellline,pattern = "fok4")]
 
 dea <- rowData(se)$DEA.FOK4_Ex.Neurons_Acute_effect_D90
-dea[grep(pattern = "NRN1",x = dea$gene),]
+# dea[grep(pattern = "NRN1",x = dea$gene),]
 ```
 ```{r}
 
@@ -3720,24 +3838,399 @@ set.seed(123)
 
 ```
 
+## Fig S5C  GR peak signal across replicates in embryo
 
-## Fig S5C H3K4me3 peak signal across replicates
+
+```{r}
+peaks <- readRDS(file = "intern_data/CUTNTag_GR/merge_narrow_threshold_0.05.rds")
+peaks <- GenomeInfoDb::keepStandardChromosomes(peaks,pruning.mode = "coarse")
+```
+
+list tracks
+
+```{r}
+bw_list <- list.files(path = "intern_data/CUTNTag_GR/",pattern = ".bw$",full.names = T)
+names <- gsub(x = basename(bw_list),pattern = "\\.bam|.bw",replacement = "")
+names(bw_list) <- names
+
+bw_GR <- bw_list
+bw_GR_full <- bw_GR[grepl(x = names(bw_GR),pattern = "full")]
+
+```
+
+```{r}
+sm_embryo <- signal2Matrix(w = 20L, filepaths = bw_GR_full,regions = peaks,smooth = T, background= 0)
+colnames(sm_embryo) <- c("Ctrl Rep.1","Ctrl Rep.2","Stress Rep.1","Stress Rep.2")
+```
+
+
+```{r}
+p <- plotEnrichedHeatmaps(ml = sm_embryo,use_raster = T,row_title = paste0("GR") ,scale_title = "Embryo\ndensity",colors = magma(2000),mean_scale_side = "none",axis_name = c("-2kb","Center","+2kb"),trim = c(0.1,0.95), heatmap_legend_param = list(legend_direction = "horizontal", legend_width = unit(0.28, "npc"), title=NULL),scale_rows = FALSE)
+p
+```
+
+```{r}
+ print(p)
+  
+  
+  png(paste0("sup_plots/","FigS5C_Heatmap_GR",".png"), width=1000, height=768)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+  
+  pdf(paste0("sup_plots/","FigS5C_Heatmap_GR",".pdf"), width=7.5, height=10)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+  
+  svg(paste0("sup_plots/","FigS5C_Heatmap_GR",".svg"), width=7.5, height=10)
+  draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
+  dev.off()
+
+```
+
+## Fig S5D MotifEnrichment GR peaks in 2-cell embryo
+
+motifs
+```{r}
+core <- read_meme(file = "objects/HOCOMOCOv11_core_MOUSE_mono_meme_format.meme")
+#full <- read_meme(file = "HOCOMOCOv11_full_MOUSE_mono_meme_format.meme")
+
+
+# original function PL
+summary_core <- universalmotif::summarise_motifs(core)
+core <- setNames(object = core,nm = summary_core$name)
+  
+motifs <- core
+modf <- data.frame(row.names=summary_core$name,
+                     TF=gsub("_MOUSE.H11MO...+","",summary_core$name),
+                     grade=gsub(".+\\.","",summary_core$name),
+                     motif_rank = gsub("[^0123]+","",gsub(".*MO.",replacement = "",summary_core$name))) #gsub("[^ro]+", "", str1)
+modf <- modf[order(modf$TF,modf$grade,modf$motif_rank),]
+modf <- modf[!duplicated(modf$TF),]
+modf <- modf[!modf$grade == "D",]
+motifs <- setNames(universalmotif::convert_motifs(motifs[row.names(modf)]), modf$TF)
+```
+
+
+
+arche
+arche
+```{r}
+arche <- read_meme(file = "../../tools/consensus_pwms.meme") ### file is from https://resources.altius.org/~jvierstra/projects/motif-clustering-v2.0beta/consensus_pwms.meme
+ # convert_motifs(arche,class = "universalmotif-universalmotif")
+
+
+
+
+arche2 <- do.call(what = "PFMatrixList", lapply(arche, class="TFBSTools-PFMatrix", FUN= convert_motifs)) 
+
+
+arche2[[1]]@ID 
+
+names <- sapply(1:length(arche2),function(i){
+  names(arche2[i]) <- arche2[[i]]@ID 
+  
+})
+
+names(arche2) <- names
+```
+
+genome
+```{r}
+genome <- Rsamtools::FaFile("objects/Mus_musculus.GRCm39.dna_sm.primary_assembly.fa")
+```
+
+```{r}
+merge_narrow_threshold_0.05 <- readRDS("intern_data//merge_narrow_threshold_0.05.rds")
+merge_narrow_threshold_0.05 <-  resize(merge_narrow_threshold_0.05,width = 200,fix = "center")
+gr <- granges(merge_narrow_threshold_0.05)
+```
+
+
+```{r}
+peak_centers <- gr # appx median of consensus opeaks
+peak_centers <- GenomeInfoDb::keepStandardChromosomes(peak_centers,pruning.mode = "coarse")
+peak_seqs <- memes::get_sequence(GenomeInfoDb::dropSeqlevels(peak_centers,"MT",pruning.mode = "coarse"), genome)# dropping MT due to its absence in  reference genome file
+
+ame_merge_narrow_threshold_0.05<- runAme(peak_seqs , database=convert_motifs(motifs), meme_path="/common/meme/bin/")
+```
+```{r}
+ame_merge_narrow_threshold_0.05$motif <- basename(ame_merge_narrow_threshold_0.05$motif_db)
+```
+
+```{r}
+# ame_merge_narrow_threshold_0.05[ame_merge_narrow_threshold_0.05$motif_id]
+```
+
+
+
+```{r,fig.width=15}
+p2 <- ggplot(ame_merge_narrow_threshold_0.05, aes(log2(((tp/pos))/((fp/neg))), -log10(adj.pvalue))) + 
+  geom_point(alpha=0.7, size =1.5) + geom_text_repel(data=head((ame_merge_narrow_threshold_0.05),20), aes(label=motif),max.overlaps = 20, size = 5)+
+  labs(x="log2FE")+ xlim(c(0,5))+theme(text = element_text(size = 13))+ggtitle("TF motif enrichment of GR peaks in 2-cell embryo")+
+      geom_text_repel(data=ame_merge_narrow_threshold_0.05[(ame_merge_narrow_threshold_0.05$motif == "GCR"),],colour = "orange", aes(label=motif),max.overlaps = 20, size = 6,nudge_x = 0.3,nudge_y = 6)+
+    # geom_text_repel(data=ame_merge_narrow_threshold_0.05[(ame_merge_narrow_threshold_0.05$motif == "ANDR"),], aes(label=motif),max.overlaps = 20, size = 4)+
+    # geom_text_repel(data=ame_merge_narrow_threshold_0.05[(ame_merge_narrow_threshold_0.05$motif == "PRGR"),], aes(label=motif),max.overlaps = 20, size = 4)+
+  theme_classic() +
+  theme(legend.position = "none",axis.text.x = element_text(size=14),
+          axis.text.y = element_text(size=14),
+          legend.text = element_text(size=12),
+          legend.title = element_text(size = 14),
+          text = element_text(size = 18)
+    )
+p2
+ggsave("sup_plots/FigS5D_motifEnrichemnt_GR_embryo.svg")
+ggsave("sup_plots/FigS5D_motifEnrichemnt_GR_embryo.png")
+ggsave("sup_plots/FigS5D_motifEnrichemnt_GR_embryo.pdf")
+```
+
+## Fig S5E GO:BP enrichment of GR-peaks in embryo
+
+```{r}
+poi <- readRDS("intern_data/CUTNTag_GR/merge_narrow_threshold_0.05.rds")
+```
+
+
+
+```{r}
+ah <- AnnotationHub()
+genome <- ah[["AH89457"]]
+
+annGR <- transcripts(genome,
+ columns = c("tx_id", "tx_biotype", "gene_id", "gene_name")
+)
+
+poi_annotated <- ChIPpeakAnno::annoPeaks(peaks = poi,annoData = annGR,bindingType = "fullRange",select = "bestOne")
+```
+
+
+
+```{r}
+set.seed(123)
+ 
+
+  gene_list <- unlist(poi_annotated$gene_name)
+  gene_list <- gene_list[!duplicated(gene_list)]
+  
+gobp <- enrichGO(gene          = gene_list,
+                OrgDb         = org.Mm.eg.db,
+                keyType       = "SYMBOL",
+                ont           = "BP",  # BP: Biological Process, MF: Molecular Function, CC: Cellular Component
+                pAdjustMethod = "BH",
+                pvalueCutoff  = 1,
+                qvalueCutoff  = 1
+)  
+
+d <- dotplot(gobp, showCategory=10)
+print(d)
+gobp@result
+
+ 
+```
+
+```{r}
+d <- dotplot(gobp, showCategory=10)
+
+print(d)+ggtitle("GO:BP GR-Peaks Embryo Top10")
+# kegg@result
+ggsave("sup_plots/FigS5E_GOBP_e2c_CnT.png")
+ggsave("sup_plots/FigS5E_GOBP_e2c_CnT.pdf")
+```
+## Fig S5F GR-Embryo signal at Sgcd locus
+
+```{r}
+bw_list <- list.files(path = "intern_data/CUTNTag_GR/",pattern = ".bw$",full.names = T)
+names <- gsub(x = basename(bw_list),pattern = "\\.bam|.bw",replacement = "")
+names(bw_list) <- names
+
+
+bw_GR <- bw_list
+
+bw_GR_full <- bw_GR[grepl(x = names(bw_GR),pattern = "full")]
+
+
+```
+```{r}
+
+bw_groups <- list("Embryo\nStress" = bw_GR_full[3:4], "Embryo\nCtrl" = bw_GR_full[1:2])
+```
+
+
+```{r}
+plotSignalTracks(files = bw_groups,overlay.alpha = 75,region = "11:47531814-47532348",aggregation = "mean",colors = c("#B83779FF","#FEB27AFF"),genomeAxis = T,ensdb = ensdb,extend = c(2500,2500),ylim= c(0,3), fontface.main = 1,cex.main = 1,cex.id=0.9,cex.title = 0.7) # , rotation.title = 0
+grid.text(paste0("Peak: 11:47531814-47532348","; ","Sgcd"), x = 0.3, y = 0.95, gp = gpar(fontsize = 14, fontface = "bold"))
+```
+```{r}
+png(paste0("sup_plots/Fig5F_Sgcd.png"), width=750, height=512)
+plotSignalTracks(files = bw_groups[3:4],overlay.alpha = 75,region = "11:47531814-47532348",aggregation = "mean",colors = c("#B83779FF","#FEB27AFF")[3:4],genomeAxis = T,ensdb = ensdb,extend = c(2500,2500),ylim= c(0,3), fontface.main = 1.4,cex.main = 0.9,cex.id=0.9,cex.title = 0.9) # , rotation.title = 0
+grid.text(paste0("Peak: 11:47531814-47532348","; ","Sgcd"), x = 0.5, y = 0.95, gp = gpar(fontsize = 15, fontface = "bold")) 
+dev.off()
+
+pdf(paste0("sup_plots/Fig5F_Sgcd.pdf"), width=8, height=7,colormodel = "cymk")
+plotSignalTracks(files = bw_groups[3:4],overlay.alpha = 75,region = "11:47531814-47532348",aggregation = "mean",colors = c("#B83779FF","#FEB27AFF")[3:4],genomeAxis = T,ensdb = ensdb,extend = c(2500,2500),ylim= c(0,3), fontface.main = 1.4,cex.main = 0.9,cex.id=0.9,cex.title = 0.9) # , rotation.title = 0
+grid.text(paste0("Peak: 11:47531814-47532348","; ","Sgcd"), x = 0.5, y = 0.95, gp = gpar(fontsize = 15, fontface = "bold"))
+dev.off()
+
+
+svg(paste0("sup_plots/Fig5F_Sgcd.svg"), width=8, height=7)
+plotSignalTracks(files = bw_groups[3:4],overlay.alpha = 75,region = "11:47531814-47532348",aggregation = "mean",colors = c("#B83779FF","#FEB27AFF")[3:4],genomeAxis = T,ensdb = ensdb,extend = c(2500,2500),ylim= c(0,3), fontface.main = 1.4,cex.main = 0.9,cex.id=0.9,cex.title = 0.9) # , rotation.title = 0
+grid.text(paste0("Peak: 11:47531814-47532348","; ","Sgcd"), x = 0.5, y = 0.95, gp = gpar(fontsize = 15, fontface = "bold"))
+dev.off()
+
+```
+
+
+## Fig S5G MotifActivity (Archetypes) in GR-Embryo peaks
+
+```{r}
+arche <- read_meme(file = "objects/consensus_pwms.meme") ### file is from https://resources.altius.org/~jvierstra/projects/motif-clustering-v2.0beta/consensus_pwms.meme
+ # convert_motifs(arche,class = "universalmotif-universalmotif")
+
+arche2 <- do.call(what = "PFMatrixList", lapply(arche, class="TFBSTools-PFMatrix", FUN= convert_motifs)) 
+
+# arche2[[1]]@ID 
+
+names <- sapply(1:length(arche2),function(i){
+  names(arche2[i]) <- arche2[[i]]@ID 
+  
+})
+
+names(arche2) <- names
+```
+
+
+```{r}
+IC <- lapply(arche,function(x){
+  x@icscore
+})
+
+arche3 <- names(arche2)
+arche3_names <- gsub(pattern = "AC....\\:",replacement = "",x = arche3)
+
+keep <- unlist(IC) == tapply(unlist(IC), arche3_names, max)[arche3_names]
+
+arche2_filtIC <- arche2[keep]
+```
+
+
+
+we filter for median 
+```{r}
+arche2_filtmedian <- arche2[unlist(IC)>median(unlist(IC)),]
+```
+
+```{r}
+arche2_filterboth <- arche2[unlist(IC)>median(unlist(IC))& keep,]
+```
+```{r}
+se <- readRDS("intern_data/CUTNTag_GR/countMatrix_broad_resized300bp.SE.rds")
+
+
+# summary(assay(se)[,1])
+se <- se[,-3]
+
+# colData(se) <- DataFrame(meta_R)
+se$Group <- as.factor(c("Ctrl","Ctrl","Stress","Stress"))
+se$Group <-relevel(se$Group,"Ctrl")
+rownames(se) <- as.character(granges(se))
+
+se <- addGCBias(se, genome=genome)
+se <- se[rowSums(assay(se))>1,]
+```
+
+```{r}
+# compute deviations
+
+set.seed(123)
+single_motifs <- do.call(what = "PFMatrixList", lapply(motifs, class="TFBSTools-PFMatrix", FUN= convert_motifs)) #old way and new with mouse hocomocov11 changed to lapply(motifs) 
+motif_ix <- matchMotifs(single_motifs, se, genome=genome)
+
+dev <- betterChromVAR::betterChromVAR(object =se, annotations   =motif_ix)
+```
+
+```{r}
+
+dev <- dev[!is.na(rowSums2(assays(dev)$z)),]
+
+
+```
+
+
+```{r}
+# compute deviations
+
+set.seed(123)
+single_motifs <- do.call(what = "PFMatrixList", lapply(arche2_filterboth, class="TFBSTools-PFMatrix", FUN= convert_motifs)) #old way and new with mouse hocomocov11 changed to lapply(motifs) 
+motif_ix <- matchMotifs(single_motifs, se, genome=genome)
+
+dev <- betterChromVAR::betterChromVAR(object =se, annotations   =motif_ix)
+```
+
+```{r}
+dev$Group <- as.factor(dev$Group)
+```
+
+```{r}
+mm <- model.matrix(~Group, data=as.data.frame(colData(dev))); mm 
+
+
+fit <- limma::lmFit(assays(dev)$z, mm,weights=sqrt(rowData(dev)$N))
+fit <- eBayes(fit)
+Results <- as.data.frame(topTable(fit = fit,coef = c(2),number = Inf));Results
+Results$archetype <- gsub(pattern = "AC....\\:",replacement = "",x = rownames(Results))
+Results <- Results[!duplicated(Results$archetype),]
+
+
+```
+
+
+
+```{r}
+library(scales)
+
+
+xlim <- c(-7, 7)
+ylim <- c(0,6)
+
+# Function to generate volcano plots
+generate_volcano_plot <- function(df, title) {
+  df$highlight <- df$adj.P.Val < 0.05
+  # df$extreme[df$logFC > xlim[2] | df$logFC < xlim[1] | -log10(df$FDR) > ylim[2] | -log10(df$FDR) < ylim[1]] <- "extreme"
+  df$highlight[df$extreme == "extreme"] <- "extreme"
+  top_genes <- df[df$adj.P.Val < 0.05,]
+  ggplot(df, aes(x=logFC, y=-log10(adj.P.Val))) +
+    geom_point(aes(color = highlight)) +
+    scale_color_manual(values = c("TRUE" = "orange", "FALSE" = "black")) +
+    geom_text_repel(data = rbind(subset(top_genes, highlight == TRUE ),df[df$archetype== "CTCF:C2H2_ZF",]), aes(label=archetype), size=3.5, min.segment.length = 0, max.overlaps = Inf, nudge_y = 0.1) +
+    geom_hline(yintercept=-log10(0.05), linetype="dashed")+
+    xlab("logFC") +
+    ylab("-log10(adjusted p-value)") +
+    theme_classic() +
+    theme(legend.position="none") +
+    ggtitle(title)
+}
+
+# Apply the function to each dataframe in the list
+generate_volcano_plot(res, "MotifActivity (Archetype) of GR embryonal signal in Stress vs Ctrl")
+ggsave("sup_plots/FigS5G_Arche_GR_e2c.svg")
+ggsave("sup_plots/FigS5G_Arche_GR_e2c.pdf")
+ggsave("sup_plots/FigS5G_Arche_GR_e2c.png")
+```
+
+## Fig S5H H3K4me3 peak signal across replicates
 
 ```{r}
 bw_embryoH3K4me3 <- list.files("intern_data/CUTNTag/",pattern = ".bw$",full.names = T)
 names(bw_embryoH3K4me3) <- basename(bw_embryoH3K4me3)
-
 ```
 
 
 ```{r}
-
-  H3K4me3_narrow <- import(con = "intern_data/CUTNTag/H3K4me3_CutNRun_2cell_embryo.narrowPeak",format = "narrowPeak") ## mm10?
-
+H3K4me3_narrow <- import(con = "intern_data/CUTNTag/H3K4me3_CutNRun_2cell_embryo.narrowPeak",format = "narrowPeak") ## mm10
 ```
 
 ```{r}
 # liftover
+
 chain <- "intern_data/mm10ToMm39.over.chain"
 bfc <- BiocFileCache()
 if(nrow(bfcquery(bfc, basename(chain)))==0){bfcadd(bfc, chain)}
@@ -3764,27 +4257,27 @@ p <- plotEnrichedHeatmaps(ml = sm_embryo,use_raster = T,row_title = paste0("H3K4
 p
 ```
 
+
 ```{r}
  print(p)
   
   
-  png(paste0("sup_plots/","FigS5C_Heatmap_H3k4me3",".png"), width=1000, height=768)
+  png(paste0("sup_plots/","FigS5H_Heatmap_H3k4me3",".png"), width=1000, height=768)
   draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
   dev.off()
   
-  pdf(paste0("sup_plots/","FigS5C_Heatmap_H3k4me3",".pdf"), width=7.5, height=10)
+  pdf(paste0("sup_plots/","FigS5H_Heatmap_H3k4me3",".pdf"), width=7.5, height=10)
   draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
   dev.off()
   
-  svg(paste0("sup_plots/","FigS5C_Heatmap_H3k4me3",".svg"), width=7.5, height=10)
+  svg(paste0("sup_plots/","FigS5H_Heatmap_H3k4me3",".svg"), width=7.5, height=10)
   draw(p, heatmap_legend_side="bottom", annotation_legend_side="right",  legend_grouping = "original")
   dev.off()
 
 ```
 
 
-
-## Fig S5D Archetype in H3K4me3
+## Fig S5I Archetype in H3K4me3
 
 ```{r}
 df <- readRDS("objects/H3K4me3CTArche_Results.DF.rds")
@@ -3816,13 +4309,13 @@ generate_volcano_plot <- function(df, title) {
 
 # Apply the function to each dataframe in the list
 generate_volcano_plot(df, "MotifActivity (Archetype) of H3K4me3 embryonal signal in Stress vs Ctrl")
-ggsave("sup_plots/FigS5D_Arche_H3K4me3_e2c.svg")
-ggsave("sup_plots/FigS5D_Arche_H3K4me3_e2c.pdf")
-ggsave("sup_plots/FigS5D_Arche_H3K4me3_e2c.png")
+ggsave("sup_plots/FigS5I_Arche_H3K4me3_e2c.svg")
+ggsave("sup_plots/FigS5I_Arche_H3K4me3_e2c.pdf")
+ggsave("sup_plots/FigS5I_Arche_H3K4me3_e2c.png")
 ```
 
 
-## Fig S5E Mepe tracks 
+## Fig S5J Mepe tracks 
 
 load necessary data
 
@@ -3846,43 +4339,38 @@ names(bw_embryoH3K4me3) <- basename(bw_embryoH3K4me3)
 ```
 
 
-
 ```{r}
-
-
-bw_groups <- list("Sperm\nGR-Stress" = bw[c(7:10)],"Sperm\nGR-Ctrl" = bw[c(1:4)], "Embryo\nH3K4me3-Stress" = bw_embryoH3K4me3[1:2], "Embryo\nH3K4me3-Ctrl" = bw_embryoH3K4me3[3:4])#RNA = bw_RNA,GR_Input = bw_input
+bw_groups <- list("Sperm\nGR-Stress" = bw[c(7:10)],"Sperm\nGR-Ctrl" = bw[c(1:4)],"Embryo\nGR-Stress" =bw_GR_full[3:4], "Embryo\nGR-Ctrl" = bw_GR_full[1:2], "Embryo\nH3K4me3-Stress" = bw_embryoH3K4me3[1:2], "Embryo\nH3K4me3-Ctrl" = bw_embryoH3K4me3[3:4])#RNA = bw_RNA,GR_Input = bw_input
 
 
 ```
 
-
-
 ```{r}
-plotSignalTracks(files = bw_groups,overlay.alpha = 75,region = "5:104478959-104479259",aggregation = "mean",colors = c("steelblue3","blue4","#00A97A","#00FF7F"),genomeAxis = T,ensdb = ensdb,extend = c(5000,5000),ylim= c(0,4), fontface.main = 1,cex.main = 1,cex.id=0.9,cex.title = 0.7) # , rotation.title = 0
+plotSignalTracks(files = bw_groups,overlay.alpha = 75,region = "5:104478959-104479259",aggregation = "mean",colors = c("steelblue3","blue4","#B83779FF","#FEB27AFF","#00A97A","#00FF7F"),genomeAxis = T,ensdb = ensdb,extend = c(5000,5000),ylim= c(0,5), fontface.main = 1,cex.main = 1,cex.id=0.9,cex.title = 0.7) # , rotation.title = 0
 grid.text(paste0("Peak: 5:104478959-104479259","; ","Mepe"), x = 0.3, y = 0.95, gp = gpar(fontsize = 14, fontface = "bold"))
 ```
 ```{r}
 
-png(paste0("sup_plots/FigS5E_Mepe.png"), width=750, height=512)
-plotSignalTracks(files = bw_groups,overlay.alpha = 75,region = "5:104478959-104479259",aggregation = "mean",colors = c("steelblue3","blue4","#00A97A","#00FF7F"),genomeAxis = T,ensdb = ensdb,extend = c(5000,5000),ylim= c(0,4), fontface.main = 1.4,cex.main = 0.9,cex.id=0.9,cex.title = 0.9) # , rotation.title = 0
+png(paste0("sup_plots/FigS5J_Mepe.png"), width=750, height=750)
+plotSignalTracks(files = bw_groups,overlay.alpha = 75,region = "5:104478959-104479259",aggregation = "mean",colors = c("steelblue3","blue4","#B83779FF","#FEB27AFF","#00A97A","#00FF7F"),genomeAxis = T,ensdb = ensdb,extend = c(5000,5000),ylim= c(0,5), fontface.main = 1.4,cex.main = 0.9,cex.id=0.9,cex.title = 0.9,title.width=1.2) # , rotation.title = 0
 grid.text(paste0("Peak: 5:104478959-104479259","; ","Mepe"), x = 0.5, y = 0.95, gp = gpar(fontsize = 15, fontface = "bold")) 
 dev.off()
 
-pdf(paste0("sup_plots/FigS5E_Mepe.pdf"), width=8, height=7,colormodel = "cymk")
-plotSignalTracks(files = bw_groups,overlay.alpha = 75,region = "5:104478959-104479259",aggregation = "mean",colors = c("steelblue3","blue4","#00A97A","#00FF7F"),genomeAxis = T,ensdb = ensdb,extend = c(5000,5000),ylim= c(0,4), fontface.main = 1.4,cex.main = 0.9,cex.id=0.9,cex.title = 0.9) # , rotation.title = 0
+pdf(paste0("sup_plots/FigS5J_Mepe.pdf"), width=8, height=10,colormodel = "cymk")
+plotSignalTracks(files = bw_groups,overlay.alpha = 75,region = "5:104478959-104479259",aggregation = "mean",colors = c("steelblue3","blue4","#B83779FF","#FEB27AFF","#00A97A","#00FF7F"),genomeAxis = T,ensdb = ensdb,extend = c(5000,5000),ylim= c(0,5), fontface.main = 1.4,cex.main = 0.9,cex.id=0.9,cex.title = 0.9) # , rotation.title = 0
 grid.text(paste0("Peak: 5:104478959-104479259","; ","Mepe"), x = 0.5, y = 0.95, gp = gpar(fontsize = 15, fontface = "bold"))
 dev.off()
 
 
-svg(paste0("sup_plots/FigS5E_Mepe.svg"), width=8, height=7)
-plotSignalTracks(files = bw_groups,overlay.alpha = 75,region = "5:104478959-104479259",aggregation = "mean",colors = c("steelblue3","blue4","#00A97A","#00FF7F"),genomeAxis = T,ensdb = ensdb,extend = c(5000,5000),ylim= c(0,4), fontface.main = 1.4,cex.main = 0.9,cex.id=0.9,cex.title = 0.9) # , rotation.title = 0
+svg(paste0("sup_plots/FigS5J_Mepe.svg"), width=8, height=10)
+plotSignalTracks(files = bw_groups,overlay.alpha = 75,region = "5:104478959-104479259",aggregation = "mean",colors = c("steelblue3","blue4","#B83779FF","#FEB27AFF","#00A97A","#00FF7F"),genomeAxis = T,ensdb = ensdb,extend = c(5000,5000),ylim= c(0,5), fontface.main = 1.4,cex.main = 0.9,cex.id=0.9,cex.title = 0.9) # , rotation.title = 0
 grid.text(paste0("Peak: 5:104478959-104479259","; ","Mepe"), x = 0.5, y = 0.95, gp = gpar(fontsize = 15, fontface = "bold"))
 dev.off()
 
 ```
 
-## Fig S5F Circ and small RNA
-### Fig S5F circRNA volcanoPlot
+## Fig S5K Circ and small RNA
+### Fig S5K circRNA volcanoPlot
 
 ```{r}
 
@@ -3900,7 +4388,7 @@ se <- SummarizedExperiment(
                  protac = ifelse(substr(colnames(circ_counts), nchar(colnames(circ_counts)), nchar(colnames(circ_counts)))=="D", "DMSO", "PROTAC"))
 )
 se$group <- factor(paste0(se$stress, "_", se$protac))
-# we dont do the sva
+
 ```
 
 
@@ -3970,13 +4458,13 @@ rowData(se)$DEA.voom.stress_PROTAC_vs_DMSO <- topTable(fit2, coef = "stress_PROT
 rowData(se)$DEA.voom.interaction <- topTable(fit2, coef = "interaction", n = Inf)
 
 
-table(rowData(se)$DEA.voom.total_stress_vs_ctrl$adj.P.Val<0.05)  # no
-table(rowData(se)$DEA.voom.PROTAC_stress_vs_ctrl$adj.P.Val<0.05)  # no 
-table(rowData(se)$DEA.voom.DMSO_stress_vs_ctrl$adj.P.Val<0.05)  # no 
-table(rowData(se)$DEA.voom.total_PROTAC_vs_DMSO$adj.P.Val<0.05)  # no 
-table(rowData(se)$DEA.voom.ctrl_PROTAC_vs_DMSO$adj.P.Val<0.05)  # no 
-table(rowData(se)$DEA.voom.stress_PROTAC_vs_DMSO$adj.P.Val<0.05)  # no 
-table(rowData(se)$DEA.voom.interaction$adj.P.Val<0.05)  # no
+# table(rowData(se)$DEA.voom.total_stress_vs_ctrl$adj.P.Val<0.05)  # no
+# table(rowData(se)$DEA.voom.PROTAC_stress_vs_ctrl$adj.P.Val<0.05)  # no 
+# table(rowData(se)$DEA.voom.DMSO_stress_vs_ctrl$adj.P.Val<0.05)  # no 
+# table(rowData(se)$DEA.voom.total_PROTAC_vs_DMSO$adj.P.Val<0.05)  # no 
+# table(rowData(se)$DEA.voom.ctrl_PROTAC_vs_DMSO$adj.P.Val<0.05)  # no 
+# table(rowData(se)$DEA.voom.stress_PROTAC_vs_DMSO$adj.P.Val<0.05)  # no 
+# table(rowData(se)$DEA.voom.interaction$adj.P.Val<0.05)  # no
 
 ```
 
@@ -3987,7 +4475,7 @@ res <- rowData(se)$DEA.voom.total_stress_vs_ctrl
 ```
 ```{r}
 res$circ_id <- rownames(res) 
-circRNA_info
+# circRNA_info
 
 
 
@@ -4041,11 +4529,11 @@ p
 
 # 
 # 
-ggsave("sup_plots/FigS5F_CircRNA_totalStress.svg")
-ggsave("sup_plots/FigS5F_CircRNA_totalStress.pdf")
-ggsave("sup_plots/FigS5F_CircRNA_totalStress.png")
+ggsave("sup_plots/FigS5K_CircRNA_totalStress.svg")
+ggsave("sup_plots/FigS5K_CircRNA_totalStress.pdf")
+ggsave("sup_plots/FigS5K_CircRNA_totalStress.png")
 ```
-### Fig S5F smallRNA
+### Fig S5K smallRNA
 
 ```{r}
 library(stringr)
@@ -4082,7 +4570,7 @@ se_collapse <- SummarizedExperiment(
   assays = list(counts = as.matrix(counts_merged)),
   colData = colData(se)
 )
-se_collapse # 2238 smallRNAs
+# se_collapse # 2238 smallRNAs
 se_collapse <- se_collapse[,order(se_collapse$stress, se_collapse$protac)]
 rm(se)
 
@@ -4164,16 +4652,16 @@ rowData(se_mirna)$DEA.voom.ctrl_PROTAC_vs_DMSO <- topTable(fit2_mirna, coef = "c
 rowData(se_mirna)$DEA.voom.stress_PROTAC_vs_DMSO <- topTable(fit2_mirna, coef = "stress_PROTAC_vs_DMSO", n = Inf)[rownames(se_mirna),]
 rowData(se_mirna)$DEA.voom.interaction <- topTable(fit2_mirna, coef = "interaction", n = Inf)
 
-table(rownames(se_mirna)== rownames(vobj_mirna$E))
+# table(rownames(se_mirna)== rownames(vobj_mirna$E))
 assay(se_mirna, "voom.val") <- vobj_mirna$E
 
-table(rowData(se_mirna)$DEA.voom.total_stress_vs_ctrl$adj.P.Val<0.05)  # no
-table(rowData(se_mirna)$DEA.voom.DMSO_stress_vs_ctrl$adj.P.Val<0.05)   # no
-table(rowData(se_mirna)$DEA.voom.PROTAC_stress_vs_ctrl$adj.P.Val<0.05) # no
-table(rowData(se_mirna)$DEA.voom.total_PROTAC_vs_DMSO$adj.P.Val<0.05)  # no
-table(rowData(se_mirna)$DEA.voom.stress_PROTAC_vs_DMSO$adj.P.Val<0.05) # no
-table(rowData(se_mirna)$DEA.voom.ctrl_PROTAC_vs_DMSO$adj.P.Val<0.05)  # no
-table(rowData(se_mirna)$DEA.voom.interaction$adj.P.Val<0.05)  # no
+# table(rowData(se_mirna)$DEA.voom.total_stress_vs_ctrl$adj.P.Val<0.05)  # no
+# table(rowData(se_mirna)$DEA.voom.DMSO_stress_vs_ctrl$adj.P.Val<0.05)   # no
+# table(rowData(se_mirna)$DEA.voom.PROTAC_stress_vs_ctrl$adj.P.Val<0.05) # no
+# table(rowData(se_mirna)$DEA.voom.total_PROTAC_vs_DMSO$adj.P.Val<0.05)  # no
+# table(rowData(se_mirna)$DEA.voom.stress_PROTAC_vs_DMSO$adj.P.Val<0.05) # no
+# table(rowData(se_mirna)$DEA.voom.ctrl_PROTAC_vs_DMSO$adj.P.Val<0.05)  # no
+# table(rowData(se_mirna)$DEA.voom.interaction$adj.P.Val<0.05)  # no
 
 ```
 
@@ -4218,9 +4706,9 @@ p_mirna <- ggplot(
 p_mirna
 # 
 # 
-ggsave("sup_plots/FigS5F_miRNA_totalPROTAC.svg")
-ggsave("sup_plots/FigS5F_miRNA_totalPROTAC.pdf")
-ggsave("sup_plots/FigS5F_miRNA_totalPROTAC.png")
+ggsave("sup_plots/FigS5K_miRNA_totalPROTAC.svg")
+ggsave("sup_plots/FigS5K_miRNA_totalPROTAC.pdf")
+ggsave("sup_plots/FigS5K_miRNA_totalPROTAC.png")
 ```
 
 tRNA:
@@ -4281,13 +4769,13 @@ rowData(se_trna)$DEA.voom.interaction <- topTable(fit2_trna, coef = "interaction
 table(rownames(se_trna)== rownames(vobj_trna$E))
 assay(se_trna, "voom.val") <- vobj_trna$E
 
-table(rowData(se_trna)$DEA.voom.total_stress_vs_ctrl$adj.P.Val<0.05)  # no
-table(rowData(se_trna)$DEA.voom.DMSO_stress_vs_ctrl$adj.P.Val<0.05)   # no
-table(rowData(se_trna)$DEA.voom.PROTAC_stress_vs_ctrl$adj.P.Val<0.05) # no
-table(rowData(se_trna)$DEA.voom.total_PROTAC_vs_DMSO$adj.P.Val<0.05)  # no
-table(rowData(se_trna)$DEA.voom.stress_PROTAC_vs_DMSO$adj.P.Val<0.05) # no
-table(rowData(se_trna)$DEA.voom.ctrl_PROTAC_vs_DMSO$adj.P.Val<0.05)  # no
-table(rowData(se_trna)$DEA.voom.interaction$adj.P.Val<0.05)  # no
+# table(rowData(se_trna)$DEA.voom.total_stress_vs_ctrl$adj.P.Val<0.05)  # no
+# table(rowData(se_trna)$DEA.voom.DMSO_stress_vs_ctrl$adj.P.Val<0.05)   # no
+# table(rowData(se_trna)$DEA.voom.PROTAC_stress_vs_ctrl$adj.P.Val<0.05) # no
+# table(rowData(se_trna)$DEA.voom.total_PROTAC_vs_DMSO$adj.P.Val<0.05)  # no
+# table(rowData(se_trna)$DEA.voom.stress_PROTAC_vs_DMSO$adj.P.Val<0.05) # no
+# table(rowData(se_trna)$DEA.voom.ctrl_PROTAC_vs_DMSO$adj.P.Val<0.05)  # no
+# table(rowData(se_trna)$DEA.voom.interaction$adj.P.Val<0.05)  # no
 
 ```
 
@@ -4328,16 +4816,16 @@ p_trna <- ggplot(
 
 p_trna
 
-ggsave("sup_plots/FigS5F_tRNA_totalPROTAC.svg")
-ggsave("sup_plots/FigS5F_tRNA_totalPROTAC.pdf")
-ggsave("sup_plots/FigS5F_tRNA_totalPROTAC.png")
+ggsave("sup_plots/FigS5K_tRNA_totalPROTAC.svg")
+ggsave("sup_plots/FigS5K_tRNA_totalPROTAC.pdf")
+ggsave("sup_plots/FigS5K_tRNA_totalPROTAC.png")
 ```
 small RNA together
 ```{r,fig.height=7}
 (p+p_mirna)/(p_trna+plot_spacer())
-ggsave("sup_plots/FigS5F_smallRNA_volcanos.svg")
-ggsave("sup_plots/FigS5F_smallRNA_volcanos.pdf")
-ggsave("sup_plots/FigS5F_smallRNA_volcanos.png")
+ggsave("sup_plots/FigS5K_smallRNA_volcanos.svg")
+ggsave("sup_plots/FigS5K_smallRNA_volcanos.pdf")
+ggsave("sup_plots/FigS5K_smallRNA_volcanos.png")
 ```
 
 top3 tRNAs boxplot
@@ -4501,12 +4989,12 @@ theme(legend.position = "right")
 
 
 
-ggsave("sup_plots/FigS5F_tRNA_top3.svg")
-ggsave("sup_plots/FigS5F_tRNA_top3.pdf")
-ggsave("sup_plots/FigS5F_tRNA_top3.png")
+ggsave("sup_plots/FigS5K_tRNA_top3.svg")
+ggsave("sup_plots/FigS5K_tRNA_top3.pdf")
+ggsave("sup_plots/FigS5K_tRNA_top3.png")
 ```
 
-## Fig S5G KH-103 effect on stress affected GR binding long RNA (p < 0.01)
+## Fig S5L KH-103 effect on stress affected GR binding long RNA (p < 0.01)
 
 ```{r}
 se <- readRDS("objects/countMatrix_longRNA_sperm.SE.rds")
@@ -4585,7 +5073,7 @@ se_heatmap <- se[, order(se$protac, se$stress)]
 
 
 semisig <- rowData(se)$DEA.voom.total_stress_vs_ctrl[rowData(se)$DEA.voom.total_stress_vs_ctrl$P.Value<0.01, ]
-semisig2 <- rowData(se)$DEA.voom.total_PROTAC_vs_DMSO[rowData(se)$DEA.voom.total_PROTAC_vs_DMSO$P.Value<0.01, ]
+
 ```
 
 
@@ -4662,24 +5150,24 @@ sh <-  sechm(
 
 sh
 
-pdf("sup_plots/FigS5G_longRNA_Heatmap_stresseaffected.pdf", width=8.0, height=9.0) #, width=14.5, height=10)
+pdf("sup_plots/FigS5L_longRNA_Heatmap_stresseaffected.pdf", width=8.0, height=9.0) #, width=14.5, height=10)
 
 print(sh)
 dev.off()
 
-png("sup_plots/FigS5G_longRNA_Heatmap_stresseaffected.png", height=650,width = 500,)
+png("sup_plots/FigS5L_longRNA_Heatmap_stresseaffected.png", height=650,width = 500,)
 
 print(sh)
 dev.off()
 
-svg("sup_plots/FigS5G_longRNA_Heatmap_stresseaffected.svg", width=10, height=8.5) #, width=14.5, height=10)
+svg("sup_plots/FigS5L_longRNA_Heatmap_stresseaffected.svg", width=10, height=8.5) #, width=14.5, height=10)
 
 print(sh)
 dev.off()
 ```
 
 
-## Fig S5H correlation Plots
+## Fig S5M correlation Plots
 
 
 ```{r}
@@ -4710,28 +5198,6 @@ cor_protac <- data.frame(
 )
 ```
 
-
-
-```{r}
-p1 <- ggplot(data = cor_protac, aes(x = embryo_logFC, y = sperm_logFC)) + 
-    geom_point() + 
-    geom_smooth(method = "lm") + 
-    # geom_smooth(method = "lm") +
-    labs(x="embryo logFC (KH-103 vs. DMSO)", 
-         y="sperm logFC (KH-103 vs. DMSO)", 
-         title = "correlation: sperm ~ embryo",
-         subtitle = "gene set: sperm GR-binders with p<0.01 in stress effect") +
-    stat_cor(method = "pearson",  
-             label.x = min(cor_protac$embryo_logFC), # position of the label
-             label.y = max(cor_protac$sperm_logFC)) +
-    theme_bw() +
-    theme(axis.text.x = element_text(size=14),
-          axis.text.y = element_text(size=14),
-          legend.text = element_text(size=12),
-          legend.title = element_text(size = 14)
-    )
-p1
-```
 
 
 
@@ -4774,12 +5240,12 @@ p2 <- ggplot(data = cor_stress, aes(x = embryo_logFC, y = sperm_logFC)) +
 p2
 ```
 ```{r,fig.width=10,fig.height=4}
-p1+p2
+p2
 ggsave("sup_plots/FigS5H_longRNA_corr.svg")
 ggsave("sup_plots/FigS5H_longRNA_corr.pdf")
 ggsave("sup_plots/FigS5H_longRNA_corr.png")
 ```
-## Fig S5I Heatmap of differential expressed genes in 2-cell embryos by IFS fathers
+## Fig S5N Heatmap of differential expressed genes in 2-cell embryos by IFS fathers
 
 
 ```{r}
@@ -4797,8 +5263,8 @@ se$Group <- Group
 
 set.seed(123)
 se$Group2 <- sample(Group,size = 17,replace = F)
-colData(se)
-meta$Sample
+# colData(se)
+# meta$Sample
 ```
 
 ```{r}
@@ -4811,7 +5277,7 @@ se <- SEtools::svacor(se, ~Group+embryos,form0 = ~embryos, n.sv = 3)
 dds <- calcNormFactors(DGEList(assay(se))) # this calculates Normalization factors according to library sequencing depth, this is important since depth can vary greatly between samples
 
 ### lets look at the library size
-dds$samples
+# dds$samples
 
 
 
@@ -4857,7 +5323,7 @@ for (con in colnames(my.contrast)){
   Results[[con]]$ID <- gsub(x = rownames(Results[[con]]),pattern = "ENS(.*)\\.",replacement = "")
   Results[[con]]$DEA <- con
 }
-Results
+# Results
 # write.csv(Results$DMSO_IFSvsCTRL$ID[Results$DMSO_IFSvsCTRL$FDR < 0.05],"trial.csv")
 ```
 ```{r}
@@ -4874,17 +5340,17 @@ print(sh)
 
 
 
-pdf("sup_plots/FigS5I.StressGenes.heatmap.pdf", width=14.5, height=10) #, width=14.5, height=10)
+pdf("sup_plots/FigS5N.StressGenes.heatmap.pdf", width=14.5, height=10) #, width=14.5, height=10)
 
 print(sh)
 dev.off()
 
-png("sup_plots/FigS5I.StressGenes.heatmap.png", height=516,width = 758,)
+png("sup_plots/FigS5N.StressGenes.heatmap.png", height=516,width = 758,)
 
 print(sh)
 dev.off()
 
-svg("sup_plots/FigS5I.StressGenes.heatmap.svg") #, width=14.5, height=10)
+svg("sup_plots/FigS5N.StressGenes.heatmap.svg") #, width=14.5, height=10)
 
 print(sh)
 dev.off()
@@ -4929,150 +5395,45 @@ generate_volcano_plot <- function(df, title) {
 
 # Apply the function to each dataframe in the list
 generate_volcano_plot(dea, "Differentially expressed genes in Stress vs Ctrl 2-cell embryos")
-ggsave("sup_plots/FigS5I_DEGs_TotalStressVsCtrl.svg")
-ggsave("sup_plots/FigS5I_DEGs_TotalStressVsCtrl.pdf")
-ggsave("sup_plots/FigS5I_DEGs_TotalStressVsCtrl.png")
+ggsave("sup_plots/FigS5N_DEGs_TotalStressVsCtrl.svg")
+ggsave("sup_plots/FigS5N_DEGs_TotalStressVsCtrl.pdf")
+ggsave("sup_plots/FigS5N_DEGs_TotalStressVsCtrl.png")
 ```
 
 
-## Fig S5J signal tracks 
+## Fig S5O signal tracks Sntb1
+
 ```{r}
-se <- readRDS("objects/SummarizedExperimentObject_EmbryoFromIFS_Sperm_treatedKH103.SE.rds")
-
-Results <- sechm::getDEA(se) 
-
-gene_list <- Results$Total_IFSvsCTRL[Results$Total_IFSvsCTRL$FDR <= 0.05,]$ID
-
-
-
-
-ah <- AnnotationHub()
-
-
-
-ensdb <- ah[["AH89457"]]
-tx <- ensembldb::genes(ensdb,columns = c("tx_id", "tx_biotype", "gene_id", "gene_name"))
-
-
-# tss <- resize(tx, 1, "start")
-    # or any selection rule
-# promo <- promoters(tss_main, 2000, 2000)
-tx <- tx[!duplicated(tx$gene_id)] 
-
-tx <- tx[tx$gene_name %in% gene_list,]
-tx <- GenomeInfoDb::keepStandardChromosomes(tx,pruning.mode = "coarse")
+region <- "15:55547263-55548085"
+name <-"Sntb1"
 ```
 
-
-
-
-Abc1b track
-```{r}
-gr <- tx[tx$gene_name %in% "Abcb1a",]
+```{r,fig.width=10}
+plotSignalTracks(files = bw_groups,overlay.alpha = 75,region = region,aggregation = "mean",colors = colors ,genomeAxis = T,ensdb = ensdb,extend = c(5000,5000),ylim= c(0,1.5), fontface.main = 1,cex.main = 1,cex.id=0.9,cex.title = 0.7) # , rotation.title = 0
+grid.text(paste0("Peak: ",region,"; ",name), x = 0.5, y = 0.95, gp = gpar(fontsize = 15, fontface = "bold"))
 ```
 
-
 ```{r}
-
-png(paste0("sup_plots/FigS5J_Abcb1a.png"), width=750, height=512)
-plotSignalTracks(files = bw_groups,overlay.alpha = 75,region = as.character(granges(gr)),aggregation = "mean",colors = c("steelblue3","blue4","#00A97A","#00FF7F"),genomeAxis = T,ensdb = ensdb,extend = c(6900,5000),ylim=c(0,1.8), fontface.main = 2.5,cex.main = 1.5,cex.id=1.2,cex.title = 0.9,cex.lab   = 1.2) # , rotation.title = 0
-grid.text(paste0("Chr:",as.character(granges(gr)),"; ","Abcb1a"), x = 0.5, y = 0.95, gp = gpar(fontsize = 15, fontface = "bold")) 
+png(paste0("sup_plots/FigS5O_Sntb1.png"), width=750, height=750)
+plotSignalTracks(files = bw_groups,overlay.alpha = 75,region = region,aggregation = "mean",colors = colors ,genomeAxis = T,ensdb = ensdb,extend = c(5000,5000),ylim= c(0,1.5),fontface.main = 1.4,cex.main = 0.9,cex.id=0.9,cex.title = 0.9) # , rotation.title = 0
+grid.text(paste0("Peak: ",region,"; ",name), x = 0.5, y = 0.95, gp = gpar(fontsize = 15, fontface = "bold"))
 dev.off()
 
-pdf(paste0("sup_plots/FigS5J_Abcb1a.pdf"), width=8, height=7,colormodel = "cymk")
-plotSignalTracks(files = bw_groups,overlay.alpha = 75,region = as.character(granges(gr)),aggregation = "mean",colors = c("steelblue3","blue4","#00A97A","#00FF7F"),genomeAxis = T,ensdb = ensdb,extend = c(6900,5000),ylim=c(0,1.8), fontface.main = 2.5,cex.main = 1.5,cex.id=1.2,cex.title = 0.9,cex.lab   = 1.2) # , rotation.title = 0
-grid.text(paste0("Chr:",as.character(granges(gr)),"; ","Abcb1a"), x = 0.5, y = 0.95, gp = gpar(fontsize = 15, fontface = "bold"))
+pdf(paste0("sup_plots/FigS5O_Sntb1.pdf"), width=8, height=8,colormodel = "cymk")
+plotSignalTracks(files = bw_groups,overlay.alpha = 75,region = region,aggregation = "mean",colors = colors ,genomeAxis = T,ensdb = ensdb,extend = c(5000,5000),ylim= c(0,1.5),, fontface.main = 1.4,cex.main = 0.9,cex.id=0.9,cex.title = 0.9) # , rotation.title = 0
+grid.text(paste0("Peak: ",region,"; ",name), x = 0.5, y = 0.95, gp = gpar(fontsize = 15, fontface = "bold"))
 dev.off()
 
 
-svg(paste0("sup_plots/FigS5J_Abcb1a.svg"), width=8, height=7)
-plotSignalTracks(files = bw_groups,overlay.alpha = 75,region = as.character(granges(gr)),aggregation = "mean",colors = c("steelblue3","blue4","#00A97A","#00FF7F"),genomeAxis = T,ensdb = ensdb,extend = c(6900,5000),ylim=c(0,1.8), fontface.main = 2.5,cex.main = 1.5,cex.id=1.2,cex.title = 0.9,cex.lab   = 1.2) # , rotation.title = 0
-grid.text(paste0("Chr:",as.character(granges(gr)),"; ","Abcb1a"), x = 0.5, y = 0.95, gp = gpar(fontsize = 15, fontface = "bold"))
+svg(paste0("sup_plots/FigS5O_Sntb1.svg"), width=8, height=8)
+plotSignalTracks(files = bw_groups,overlay.alpha = 75,region = region,aggregation = "mean",colors = colors ,genomeAxis = T,ensdb = ensdb,extend = c(5000,5000),ylim= c(0,1.5), fontface.main = 1.4,cex.main = 0.9,cex.id=0.9,cex.title = 0.9) # , rotation.title = 0
+grid.text(paste0("Peak: ",region,"; ",name), x = 0.5, y = 0.95, gp = gpar(fontsize = 15, fontface = "bold"))
 dev.off()
 
 ```
 
 
-
-
-
-Chchd6 track
-```{r}
-gr <- tx[tx$gene_name %in% "Chchd6",]
-```
-
-
-
-
-
-
-
-```{r}
-plotSignalTracks(files = bw_groups,overlay.alpha = 75,region = as.character(granges(gr)),aggregation = "mean",colors = c("steelblue3","blue4","#00A97A","#00FF7F"),genomeAxis = T,ensdb = ensdb,extend = c(51000,450000), fontface.main = 2,cex.main = 1,cex.id=0.9,cex.title = 0.7) # , rotation.title = 0
-grid.text(paste0("Chr:",as.character(granges(gr)),"; ","Chchd6"), x = 0.3, y = 0.95, gp = gpar(fontsize = 14, fontface = "bold"))
-```
-
-```{r}
-
-png(paste0("sup_plots/FigS5J_Chchd6.png"), width=750, height=512)
-plotSignalTracks(files = bw_groups,overlay.alpha = 75,region = as.character(granges(gr)),aggregation = "mean",colors = c("steelblue3","blue4","#00A97A","#00FF7F"),genomeAxis = T,ensdb = ensdb,extend = c(51000,450000),ylim=c(0,2), fontface.main = 2.5,cex.main = 1.5,cex.id=1.2,cex.title = 0.9,cex.lab   = 1.2) # , rotation.title = 0
-grid.text(paste0("Chr:",as.character(granges(gr)),"; ","Chchd6"), x = 0.5, y = 0.95, gp = gpar(fontsize = 15, fontface = "bold")) 
-dev.off()
-
-pdf(paste0("sup_plots/FigS5J_Chchd6.pdf"), width=8, height=7,colormodel = "cymk")
-plotSignalTracks(files = bw_groups,overlay.alpha = 75,region = as.character(granges(gr)),aggregation = "mean",colors = c("steelblue3","blue4","#00A97A","#00FF7F"),genomeAxis = T,ensdb = ensdb,extend = c(51000,450000),ylim=c(0,2), fontface.main = 2.5,cex.main = 1.5,cex.id=1.2,cex.title = 0.9,cex.lab   = 1.2) # , rotation.title = 0
-grid.text(paste0("Chr:",as.character(granges(gr)),"; ","Chchd6"), x = 0.5, y = 0.95, gp = gpar(fontsize = 15, fontface = "bold"))
-dev.off()
-
-
-svg(paste0("sup_plots/FigS5J_Chchd6.svg"), width=8, height=7)
-plotSignalTracks(files = bw_groups,overlay.alpha = 75,region = as.character(granges(gr)),aggregation = "mean",colors = c("steelblue3","blue4","#00A97A","#00FF7F"),genomeAxis = T,ensdb = ensdb,extend = c(51000,450000),ylim=c(0,2), fontface.main = 2.5,cex.main = 1.5,cex.id=1.2,cex.title = 0.9,cex.lab   = 1.2) # , rotation.title = 0
-grid.text(paste0("Chr:",as.character(granges(gr)),"; ","Chchd6"), x = 0.5, y = 0.95, gp = gpar(fontsize = 15, fontface = "bold"))
-dev.off()
-
-```
-
-
-Herpud1 track
-```{r}
-gr <- tx[tx$gene_name %in% "Herpud1",]
-```
-
-
-
-
-
-
-
-```{r}
-plotSignalTracks(files = bw_groups,overlay.alpha = 75,region = as.character(granges(gr)),aggregation = "mean",colors = c("steelblue3","blue4","#00A97A","#00FF7F"),genomeAxis = T,ensdb = ensdb,extend = c(200000,20000), fontface.main = 2,cex.main = 1,cex.id=0.9,cex.title = 0.7) # , rotation.title = 0
-grid.text(paste0("Chr:",as.character(granges(gr)),"; ","Herpud1"), x = 0.3, y = 0.95, gp = gpar(fontsize = 14, fontface = "bold"))
-```
-```{r}
-
-png(paste0("sup_plots/FigS5J_Herpud1.png"), width=750, height=512)
-plotSignalTracks(files = bw_groups,overlay.alpha = 75,region = as.character(granges(gr)),aggregation = "mean",colors = c("steelblue3","blue4","#00A97A","#00FF7F"),genomeAxis = T,ensdb = ensdb,extend = c(200000,20000),ylim=c(0,1.75), fontface.main = 2.5,cex.main = 1.5,cex.id=1.2,cex.title = 0.9,cex.lab   = 1.2) # , rotation.title = 0
-grid.text(paste0("Chr:",as.character(granges(gr)),"; ","Herpud1"), x = 0.5, y = 0.95, gp = gpar(fontsize = 15, fontface = "bold")) 
-dev.off()
-
-pdf(paste0("sup_plots/FigS5J_Herpud1.pdf"), width=8, height=7,colormodel = "cymk")
-plotSignalTracks(files = bw_groups,overlay.alpha = 75,region = as.character(granges(gr)),aggregation = "mean",colors = c("steelblue3","blue4","#00A97A","#00FF7F"),genomeAxis = T,ensdb = ensdb,extend = c(200000,20000),ylim=c(0,1.75), fontface.main = 2.5,cex.main = 1.5,cex.id=1.2,cex.title = 0.9,cex.lab   = 1.2) # , rotation.title = 0
-grid.text(paste0("Chr:",as.character(granges(gr)),"; ","Herpud1"), x = 0.5, y = 0.95, gp = gpar(fontsize = 15, fontface = "bold"))
-dev.off()
-
-
-svg(paste0("sup_plots/FigS5J_Herpud1.svg"), width=8, height=7)
-plotSignalTracks(files = bw_groups,overlay.alpha = 75,region = as.character(granges(gr)),aggregation = "mean",colors = c("steelblue3","blue4","#00A97A","#00FF7F"),genomeAxis = T,ensdb = ensdb,extend = c(200000,20000),ylim=c(0,1.75), fontface.main = 2.5,cex.main = 1.5,cex.id=1.2,cex.title = 0.9,cex.lab   = 1.2) # , rotation.title = 0
-grid.text(paste0("Chr:",as.character(granges(gr)),"; ","Herpud1"), x = 0.5, y = 0.95, gp = gpar(fontsize = 15, fontface = "bold"))
-dev.off()
-
-```
-
-
-
-## Fig S5K GO:BP 2-cell embryos of paternal stress
-
-
+## Fig S5P GO:BP 2-cell embryos of paternal stress
 
 
 ```{r}
@@ -5099,13 +5460,13 @@ kegg <- enrichGO(gene          = gene_list,
 
 }
 print(d)
-ggsave("sup_plots/FigS5K.2cellGOBPDMSOvsIFS.svg")
-ggsave("sup_plots/FigS5K.2cellGOBPDMSOvsIFS.pdf")#, width = 6, height = 4)
-ggsave("sup_plots/FigS5K.2cellGOBPDMSOvsIFS.png")
+ggsave("sup_plots/FigS5P.2cellGOBPDMSOvsIFS.svg")
+ggsave("sup_plots/FigS5P.2cellGOBPDMSOvsIFS.pdf")#, width = 6, height = 4)
+ggsave("sup_plots/FigS5P.2cellGOBPDMSOvsIFS.png")
 
 ```
 
-## Fig S5L GO:BP in excitatory neurons (of a human neural organoid) acutely treated with Dexamethason
+## Fig S5Q GO:BP in excitatory neurons (of a human neural organoid) acutely treated with Dexamethason
 ```{r}
 se <- readRDS("objects/Binder_DexOrganoids_ExInh_Neurons.SE.rds")
 gene_lists <- metadata(se)$feature.lists
@@ -5145,11 +5506,11 @@ d <- dotplot(kegg, showCategory=10)+ggtitle("GO:BP Ex.Neurons Acute Dex Effect")
 print(d)
 
 
-ggsave(paste0("sup_plots/FigS5L.FOK4.Ex.Neurons.GOBP.Acute90d.png"))
+ggsave(paste0("sup_plots/FigS5Q.FOK4.Ex.Neurons.GOBP.Acute90d.png"))
 
-ggsave(paste0("sup_plots/FigS5L.FOK4.Ex.Neurons.GOBP.Acute90d.pdf"))
+ggsave(paste0("sup_plots/FigS5Q.FOK4.Ex.Neurons.GOBP.Acute90d.pdf"))
 
-ggsave(paste0("sup_plots/FigS5L.FOK4.Ex.Neurons.GOBP.Acute90d.svg"))
+ggsave(paste0("sup_plots/FigS5Q.FOK4.Ex.Neurons.GOBP.Acute90d.svg"))
 
 
 
@@ -5187,6 +5548,9 @@ dea.Fkbp5 <- dea.combined[grep(pattern = "Fkbp5",x = dea.combined$Gene),]
 
 openxlsx::write.xlsx(dea.Fkbp5,file = "dea.Fkbp5.xlsx")
 ```
+
+
+
 
 ```{r}
 metadata(se)$anno_colors <- list(stress=c(CTRL="steelblue", IFS ="firebrick3"), sex =c(m = "forestgreen", f = "purple4"), condition = c("ctrl_DMSO" = "seashell2","stress_DMSO" =  "#ffa500ff" , "ctrl_PROTAC" = "seashell4" , "stress_PROTAC" = "tomato3"))
@@ -5337,6 +5701,56 @@ ggsave("plots/Fig6D_Fkbp5_offspring.png")
 
 
 ```
+
+
+
+```{r}
+gene <- "Sntb1"
+  # Calculate range and breaks
+  y_min <- (min(df[[gene]]))
+  y_max <- (max(df[[gene]]))
+  y_breaks <- seq(y_min-0.1, y_max+0.1, length.out = 4)
+  
+  # Round to nearest 0.5
+  round_to_half <- function(x) round(x * 2,digits = 1) / 2
+  y_breaks <- round_to_half(y_breaks)
+  
+  # Adjust limits to match rounded breaks
+  y_lim <- range(y_breaks)
+  
+  
+  
+  e <- ggplot(df, aes(x = sex, y = df[[gene]], fill = condition))
+  
+  
+   e2 <- e + geom_boxplot(width = 0.75,outlier.shape = NA ) + 
+     geom_jitter(
+     position=position_jitterdodge(jitter.width = 0.1, dodge.width = 0.75)
+      )+
+  
+     ylab("logcpm")+
+     xlab("Groups")+
+     ggtitle(paste0("HPP: ",gene," expression"))+
+  
+     
+  
+  scale_y_continuous(breaks = y_breaks, limits = y_lim) +
+  
+  
+     scale_fill_manual(values=c( "seashell2","#ffa500ff","seashell4","tomato3"))+
+     labs(fill= "Condition")+
+  theme_bw()+
+   theme(
+    axis.text.x = element_text(size = 9),
+    text = element_text(size = 14), 
+  )
+   
+   
+   print(e2)
+  
+```
+
+
 # Fig 6E CortResponse Offspring
 load data
 
@@ -5368,7 +5782,7 @@ anova(fit, type = 3)
 
 df$Group <- interaction(df$stress,df$treatment)
 df$Group <- as.factor(gsub(x = df$Group,pattern = "-",replacement = "."))
-table(df$Group)
+# table(df$Group)
 ```
 
 
@@ -5723,7 +6137,7 @@ ggsave("plots/Fig6FSPT_activePhase.png")
 read in behavior data
 ```{r}
 df <- readRDS("objects/OFT_readout.rds")
-df$tic1
+# df$tic1
 ```
 
 
@@ -5853,7 +6267,7 @@ US$meta$condition[US$meta$condition == "non-stressed DMSO"] <- "CTRL DMSO"
 US$meta$condition[US$meta$condition == "stressed PROTAC"] <- "IFS PROTAC"
 US$meta$condition[US$meta$condition == "stressed DMSO"] <- "IFS DMSO"
 
-table(US$meta$condition)
+# table(US$meta$condition)
 
 
 # US$meta <- US$meta %>%
@@ -6190,7 +6604,7 @@ anova(fit, type = 3)
 
 df$Group <- interaction(df$stress,df$treatment)
 df$Group <- as.factor(gsub(x = df$Group,pattern = "-",replacement = "."))
-table(df$Group)
+# table(df$Group)
 ```
 
 
@@ -6493,7 +6907,7 @@ supported rear merge
 read in behavior data
 ```{r}
 df <- readRDS("objects/OFT_readout.rds")
-df$classifications.SupportedRear.count
+# df$classifications.SupportedRear.count
 ```
 
 
@@ -6552,7 +6966,7 @@ OFT merge Supported Rear count
 read in behavior data
 ```{r}
 df <- readRDS("objects/OFT_readout.rds")
-df$classifications.SupportedRear.count
+# df$classifications.SupportedRear.count
 ```
 
 
@@ -6611,7 +7025,7 @@ OFT Grooming count
 read in behavior data
 ```{r}
 df <- readRDS("objects/OFT_readout.rds")
-df$classifications.Grooming.count
+# df$classifications.Grooming.count
 ```
 
 
@@ -6867,7 +7281,7 @@ ggsave("sup_plots/FigS6H_LDB_DistanceCovered_merge_offspring.png")
 
 ```{r}
 df <- readRDS("objects/LDB_readout.rds")
-df$bodycentre.dark.total.time
+# df$bodycentre.dark.total.time
 ```
 
 
@@ -6980,7 +7394,7 @@ ggsave("sup_plots/FigS6H_LDB_LtoD_merge_offspring.png")
 
 ```{r}
 df <- readRDS("objects/LDB_readout.rds")
-df$classifications.SupportedRear.count
+# df$classifications.SupportedRear.count
 ```
 
 
@@ -7038,7 +7452,7 @@ ggsave("sup_plots/FigS6H_LDB_SupRear_merge_offspring.png")
 
 ```{r}
 df <- readRDS("objects/LDB_readout.rds")
-df$classifications.UnsupportedRear.count
+# df$classifications.UnsupportedRear.count
 ```
 
 
@@ -7098,7 +7512,7 @@ ggsave("sup_plots/FigS6H_LDB_UnSupRear_merge_offspring.png")
 read in behavior data
 ```{r}
 df <- readRDS("objects/LDB_readout.rds")
-df$bodycentre.distance.moving
+# df$bodycentre.distance.moving
 ```
 
 
@@ -7156,7 +7570,7 @@ ggsave("sup_plots/FigS6I_LDB_DistanceCovered_offspring.png")
 read in behavior data
 ```{r}
 df <- readRDS("objects/LDB_readout.rds")
-df$bodycentre.dark.total.time
+# df$bodycentre.dark.total.time
 ```
 
 
@@ -7210,7 +7624,7 @@ ggsave("sup_plots/FigS6I_LDB_TID_offspring.png")
 
 ```{r}
 df <- readRDS("objects/LDB_readout.rds")
-df$bodycentre..transitions.light.to.dark
+# df$bodycentre..transitions.light.to.dark
 ```
 
 
@@ -7265,7 +7679,7 @@ ggsave("sup_plots/FigS6I_LDB_LtoD_offspring.png")
 
 ```{r}
 df <- readRDS("objects/LDB_readout.rds")
-df$classifications.SupportedRear.count
+# df$classifications.SupportedRear.count
 ```
 
 
@@ -7320,7 +7734,7 @@ ggsave("sup_plots/FigS6I_LDB_SupRear_offspring.png")
 
 ```{r}
 df <- readRDS("objects/LDB_readout.rds")
-df$classifications.UnsupportedRear.count
+# df$classifications.UnsupportedRear.count
 ```
 
 
